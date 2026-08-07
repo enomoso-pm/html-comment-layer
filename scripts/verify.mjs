@@ -1041,11 +1041,174 @@ try {
     return JSON.stringify({ 完了ボタン, メニュー前に編集なし, メニュー前に削除なし, items,
       メニューはカードの中: !!(menu && card().contains(menu)) });
   `));
-  ok('カードは完了だけをボタンで出し、編集・削除・完了は「…」に集約されている',
+  ok('カードは完了だけをボタンで出し、編集・担当者・削除・完了は「…」に集約されている',
      r40.完了ボタン && r40.メニュー前に編集なし && r40.メニュー前に削除なし
-       && r40.items.length === 3 && r40.items[0] === '編集' && r40.items[1] === '削除'
-       && /完了/.test(r40.items[2]) && r40.メニューはカードの中,
+       && r40.items.length === 4 && r40.items[0] === '編集' && r40.items[1] === '担当者を変更'
+       && r40.items[2] === '削除' && /完了/.test(r40.items[3]) && r40.メニューはカードの中,
      JSON.stringify(r40));
+
+  // 41. 担当者の付け替え。書き直させないための修正なので、本文も最終更新も動かさない
+  const r41 = JSON.parse(await b.evalJS(`
+    __commentLayer.setSidebar(true);
+    // 直前のテストが「…」を開いたままなので、閉じてから始める
+    if (__commentLayer.openMenuId) {
+      document.querySelector('[data-cl="menu"][data-id="' + __commentLayer.openMenuId + '"]').click();
+    }
+    // 付け替え先のユーザーを用意する
+    __commentLayer.commit({ type:'user-add', user:{ id:'u-as', name:'付替先さん', color:'#aa00aa' } });
+    // 本文にハイライトが残っているテキストコメントを選ぶ。
+    // 対象を失ったコメントを選ぶと、色の追従を確かめようがない
+    const target = __commentLayer.comments.filter(c =>
+      c.type === 'text' && document.querySelector('.comment-highlight[data-id="' + c.id + '"]'))[0];
+    if (!target) return JSON.stringify({ fatal: 'ハイライトの残ったコメントが無い' });
+    const id = target.id;
+    // いまの担当を登録済みユーザーに揃えてから測る（消えた人が担当のままだと印は付かない＝正しい挙動）
+    const first = __commentLayer.users[0].id;
+    __commentLayer.reassign(id, first);
+    const base = __commentLayer.comments.filter(c => c.id === id)[0];
+    const before = { author: base.author, color: base.color, text: base.text, upd: base.updatedAt };
+
+    // 「…」→「担当者を変更」で、同じポップアップが担当者一覧に切り替わる
+    const card = () => document.getElementById('cl-item-' + id);
+    card().querySelector('[data-cl="menu"]').click();
+    card().querySelector('[data-cl="assign"]').click();
+    const 一覧に切替 = __commentLayer.menuMode === 'assign';
+    const 候補数 = card().querySelectorAll('[data-cl="assign-to"]').length;
+    const 印の位置 = card().querySelector('[data-cl="assign-to"][aria-checked="true"]');
+    const 現在の担当に印 = !!印の位置 && 印の位置.getAttribute('data-uid') === first;
+    const 戻れる = !!card().querySelector('[data-cl="menu-back"]');
+
+    // 付け替えを実行
+    const uid = 'u-as';
+    card().querySelector('[data-cl="assign-to"][data-uid="' + uid + '"]').click();
+    const after = __commentLayer.comments.filter(c => c.id === id)[0];
+    // 本文のハイライトの色も追従しているか
+    const hl = document.querySelector('.comment-highlight[data-id="' + id + '"]');
+    const hlColor = hl ? (hl.style.backgroundColor || hl.style.fill) : null;
+
+    return JSON.stringify({
+      一覧に切替, 候補数, 現在の担当に印, 戻れる,
+      担当者が変わった: after.author === '付替先さん',
+      色も変わった: after.color.toLowerCase() === '#aa00aa',
+      本文は変わらない: after.text === before.text,
+      最終更新は動かない: after.updatedAt === before.upd,
+      元の担当と違う: before.author !== after.author,
+      ハイライトも追従: !!hlColor && /170|aa/i.test(hlColor),
+      メニューは閉じる: __commentLayer.openMenuId === null,
+      表示も更新: (card().textContent || '').indexOf('付替先さん') >= 0
+    });
+  `));
+  if (r41.fatal) throw new Error(r41.fatal);
+  ok('「…」から担当者一覧に切り替わり、いまの担当に印が付いて戻ることもできる',
+     r41.一覧に切替 && r41.候補数 > 1 && r41.現在の担当に印 && r41.戻れる, JSON.stringify(r41));
+  ok('担当者を付け替えると、名前・色・本文のハイライトが追従する',
+     r41.担当者が変わった && r41.色も変わった && r41.元の担当と違う && r41.ハイライトも追従
+       && r41.表示も更新 && r41.メニューは閉じる, JSON.stringify(r41));
+  ok('担当者の付け替えでは、本文も最終更新（並び順）も動かない',
+     r41.本文は変わらない && r41.最終更新は動かない, JSON.stringify(r41));
+
+  // 41b. 返信も同じ形で付け替えられる（返信の操作も「…」に集約されている）
+  const r41b = JSON.parse(await b.evalJS(`
+    // 前のテストで返信付きのコメントが残っているとは限らないので、無ければ自分で1件作る
+    let c = __commentLayer.comments.filter(x => (x.replies || []).length > 0)[0];
+    if (!c) {
+      c = __commentLayer.comments[0];
+      if (!c) return JSON.stringify({ fatal: 'コメントが1件も無い' });
+      __commentLayer.commit({ type:'reply-add', id: c.id, reply: {
+        id: 'rep-verify41b', text: '付け替え確認用の返信', author: '検証用',
+        color: '#0066be', date: '2026-01-01T00:00:00.000Z' } });
+      c = __commentLayer.comments.filter(x => x.id === c.id)[0];
+    }
+    const rid = c.replies[0].id;
+    const before = c.replies[0].author;
+    const wrap = () => document.querySelector('#cl-item-' + c.id + ' .cl-rmenu');
+    const アイコン直置きなし = !document.querySelector('#cl-item-' + c.id + ' .cl-rmeta [data-cl="reply-edit"]');
+    wrap().querySelector('[data-cl="reply-menu"]').click();
+    const items = [...wrap().querySelectorAll('.cl-menu-item')].map(e => e.textContent.trim());
+    wrap().querySelector('[data-cl="assign"]').click();
+    wrap().querySelector('[data-cl="assign-to"][data-uid="u-as"]').click();
+    const after = __commentLayer.comments.filter(x => x.id === c.id)[0].replies[0];
+    return JSON.stringify({ アイコン直置きなし, items, before,
+      付け替わった: after.author === '付替先さん' && after.color.toLowerCase() === '#aa00aa',
+      完了は出ない: !items.some(t => /完了/.test(t)) });
+  `));
+  if (r41b.fatal) throw new Error(r41b.fatal);
+  {
+    ok('返信の操作も「…」に集約され、編集・担当者を変更・削除が並ぶ',
+       r41b.アイコン直置きなし && r41b.items.length === 3
+         && r41b.items[0] === '編集' && r41b.items[1] === '担当者を変更' && r41b.items[2] === '削除'
+         && r41b.完了は出ない, JSON.stringify(r41b));
+    ok('返信の担当者も付け替えられる', r41b.付け替わった, JSON.stringify(r41b));
+  }
+
+  // 41c. 「…」メニューは一覧の中に置いてあるので、下端のカードで開くと見切れる。
+  //      下に入らなければ上向きに開き、それでも入らなければ一覧を送って全体を見せる
+  const r41c = JSON.parse(await b.evalJS(`
+    __commentLayer.setSidebar(true);
+    if (__commentLayer.openMenuId) {
+      const bt = document.querySelector('[data-cl="menu"][data-id="' + __commentLayer.openMenuId + '"]');
+      if (bt) bt.click();
+    }
+    const list = document.getElementById('cl-list');
+    // 一覧をいちばん下まで送って、最後のカードで開く（いちばん見切れやすい状況）
+    list.scrollTop = list.scrollHeight;
+    const cards = [...list.querySelectorAll('.cl-item')];
+    const last = cards[cards.length - 1];
+    const id = last.id.replace('cl-item-', '');
+    last.querySelector('[data-cl="menu"]').click();
+    const menu = document.querySelector('#cl-list .cl-menu');
+    const mr = menu.getBoundingClientRect(), lr = list.getBoundingClientRect();
+    const res = {
+      メニューが出た: !!menu,
+      上下が一覧に収まる: mr.top >= lr.top - 1 && mr.bottom <= lr.bottom + 1,
+      高さ: Math.round(mr.height), 一覧の高さ: Math.round(lr.height)
+    };
+    // 担当者一覧（項目数が増えるほう）でも収まるか
+    document.querySelector('#cl-item-' + id + ' [data-cl="assign"]').click();
+    const m2 = document.querySelector('#cl-list .cl-menu').getBoundingClientRect();
+    res.担当者一覧も収まる = m2.top >= lr.top - 1 && m2.bottom <= lr.bottom + 1;
+    document.querySelector('#cl-item-' + id + ' [data-cl="menu-back"]').click();
+    document.querySelector('#cl-item-' + id + ' [data-cl="menu"]').click();
+    return JSON.stringify(res);
+  `));
+  ok('一覧の下端で「…」を開いてもメニューが見切れない',
+     r41c.メニューが出た && r41c.上下が一覧に収まる && r41c.担当者一覧も収まる, JSON.stringify(r41c));
+
+  // 42. 新規ユーザーの色は「いま使われている色から最も遠い色」を選ぶ。
+  //     v2.5 までは配列の先頭から順に配っていたので、3人目で1人目とほぼ同じ色になっていた
+  //     （OKLab距離 0.116。0.15 を下回ると、ハイライトを見ても誰の指摘か分からない）
+  const r42 = JSON.parse(await b.evalJS(`
+    const D = (a, b) => __commentLayer._colorDistance(a, b);
+    // 実際に人を増やしながら、追加時点の「既存で最も近い色との距離」を記録する
+    const sim = () => {
+      const used = [__commentLayer.users[0].color];
+      const mins = [];
+      const added = [];
+      for (let i = 0; i < 7; i++) {
+        const c = __commentLayer._nextUserColor();
+        mins.push(Math.min(...used.map(u => D(c, u))));
+        added.push(c);
+        __commentLayer.commit({ type:'user-add', user:{ id:'u-sim'+i, name:'仮'+i, color:c } });
+        used.push(c);
+      }
+      added.forEach((_, i) => __commentLayer.commit({ type:'user-delete', id:'u-sim'+i }));
+      return { mins, added };
+    };
+    // 検証用にユーザーを1人だけにしてから測る
+    const keep = __commentLayer.users[0].id;
+    __commentLayer.users.slice(1).forEach(u => __commentLayer.commit({ type:'user-delete', id:u.id }));
+    const s = sim();
+    return JSON.stringify({
+      mins: s.mins.map(v => +v.toFixed(3)),
+      added: s.added,
+      三人目まで: Math.min(...s.mins.slice(0, 2)),
+      五人目まで: Math.min(...s.mins.slice(0, 4)),
+      重複なし: new Set(s.added).size === s.added.length
+    });
+  `));
+  ok('新規ユーザーの色は、既存の色から十分に離れた色が選ばれる（3人目で旧実装の2倍以上）',
+     r42.三人目まで > 0.24 && r42.五人目まで > 0.15 && r42.重複なし,
+     `3人目まで=${r42.三人目まで}（旧0.116） 5人目まで=${r42.五人目まで}（旧0.111） 距離=${JSON.stringify(r42.mins)}`);
 
   const errs6 = b.events.filter(e => e.method === 'Runtime.exceptionThrown');
   ok('v2.4のテスト中もJSエラーが出ない', errs6.length === 0, errs6.map(e => e.params.exceptionDetails.text).join(' / '));

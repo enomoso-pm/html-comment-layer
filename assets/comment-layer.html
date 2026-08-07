@@ -1,5 +1,5 @@
 <!-- ===================================================================
-     COMMENT-LAYER v2.5.0 : START
+     COMMENT-LAYER v2.6.0 : START
      HTML資料にレビューコメント機能を後付けするドロップイン・ブロック。
      この START 〜 END までを丸ごと差し替えればバージョンアップできる。
      資料側に必要な条件：
@@ -277,6 +277,14 @@ html.cl-open #cl-sidebar{ display:flex; }
 .cl-menu-item[data-danger]{ color:var(--cl-danger); }
 .cl-menu-item[data-danger]:hover{ background:var(--cl-red-50); }
 .cl-menu-sep{ height:1px; background:var(--cl-border); margin:4px 2px; }
+/* 担当者の付け替えは、同じポップアップの中を2階層目に差し替えて見せる。
+   別のダイアログを開くと、どのコメントを直しているのかが画面から消える */
+.cl-menu{ max-height:264px; overflow-y:auto; overscroll-behavior:contain; }
+.cl-menu-label{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cl-menu-check{ color:var(--cl-primary); flex:0 0 auto; }
+.cl-menu-back{ color:var(--cl-mid); font-size:12.5px; }
+.cl-menu-head{ padding:6px 10px 4px; font-size:11.5px; font-weight:700; color:var(--cl-gray-700); }
+.cl-rmenu{ position:relative; margin-left:auto; display:flex; }
 
 /* --- 優先度（旧「ラベル」）。クリックで 必須 → 要望 → 軽微 → なし と巡回 --- */
 .cl-chip{ display:inline-flex; align-items:center; font:700 11.5px/1.4 var(--cl-font); letter-spacing:.02em;
@@ -631,7 +639,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
     </ul>
     <div class="cl-g-tip">
       <svg class="cl-i" data-s="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 17h2v-6h-2v6Zm1-8c.283 0 .52-.096.712-.288A.968.968 0 0 0 13 8a.968.968 0 0 0-.288-.712A.968.968 0 0 0 12 7a.968.968 0 0 0-.712.288A.968.968 0 0 0 11 8c0 .283.096.52.288.712.191.192.429.288.712.288Zm0 13a9.7 9.7 0 0 1-3.9-.79 10.1 10.1 0 0 1-5.31-5.31A9.7 9.7 0 0 1 2 12c0-1.39.26-2.69.79-3.9a10.1 10.1 0 0 1 5.31-5.31A9.7 9.7 0 0 1 12 2c1.39 0 2.69.26 3.9.79a10.1 10.1 0 0 1 5.31 5.31c.53 1.21.79 2.51.79 3.9s-.26 2.69-.79 3.9a10.1 10.1 0 0 1-5.31 5.31c-1.21.53-2.51.79-3.9.79Z"/></svg>
-      <div>「ユーザーを管理」では、名前の変更・色の変更・削除もできます。色を変えると、その人が過去に書いたハイライトにも即反映されます。</div>
+      <div>「ユーザーを管理」では、名前の変更・色の変更・削除もできます。色は<strong>すでに使われている色からいちばん離れた色</strong>が自動で選ばれるので、見分けがつかなくなりません。色を変えると、その人が過去に書いたハイライトにも即反映されます。</div>
     </div>
    </div>
 
@@ -741,11 +749,12 @@ html.cl-guide-open #cl-guide{ display:flex; }
       <g transform="translate(268,18) scale(0.85)" fill="#666666">
         <path d="M12 20a1.95 1.95 0 0 1-1.425-.575A1.95 1.95 0 0 1 10 18c0-.55.192-1.025.575-1.425A1.95 1.95 0 0 1 12 16c.55 0 1.025.192 1.425.575S14 17.45 14 18s-.192 1.025-.575 1.425A1.95 1.95 0 0 1 12 20Zm0-6a1.95 1.95 0 0 1-1.425-.575A1.95 1.95 0 0 1 10 12c0-.55.192-1.025.575-1.425A1.95 1.95 0 0 1 12 10c.55 0 1.025.192 1.425.575S14 11.45 14 12s-.192 1.025-.575 1.425A1.95 1.95 0 0 1 12 14Zm0-6a1.95 1.95 0 0 1-1.425-.575A1.95 1.95 0 0 1 10 6c0-.55.192-1.025.575-1.425A1.95 1.95 0 0 1 12 4c.55 0 1.025.192 1.425.575S14 5.45 14 6s-.192 1.025-.575 1.425A1.95 1.95 0 0 1 12 8Z"/>
       </g>
-      <rect x="292" y="34" width="102" height="76" rx="8" fill="#fff" stroke="#b3b3b3" stroke-width="1.5"/>
-      <text x="308" y="55" font-family="system-ui,sans-serif" font-size="10" fill="#333333">編集</text>
-      <text x="308" y="77" font-family="system-ui,sans-serif" font-size="10" fill="#ec0000">削除</text>
-      <path d="M300 88 h86" stroke="#e6e6e6" stroke-width="1.5"/>
-      <text x="308" y="103" font-family="system-ui,sans-serif" font-size="10" fill="#333333">完了にする</text>
+      <rect x="292" y="34" width="110" height="96" rx="8" fill="#fff" stroke="#b3b3b3" stroke-width="1.5"/>
+      <text x="306" y="53" font-family="system-ui,sans-serif" font-size="10" fill="#333333">編集</text>
+      <text x="306" y="73" font-family="system-ui,sans-serif" font-size="10" fill="#333333">担当者を変更</text>
+      <text x="306" y="93" font-family="system-ui,sans-serif" font-size="10" fill="#ec0000">削除</text>
+      <path d="M300 102 h94" stroke="#e6e6e6" stroke-width="1.5"/>
+      <text x="306" y="120" font-family="system-ui,sans-serif" font-size="10" fill="#333333">完了にする</text>
       <path d="M282 30 C 290 30, 286 34, 292 40" fill="none" stroke="#b3b3b3" stroke-width="1.5" stroke-dasharray="3 3"/>
       <path d="M258 40 C 274 60, 250 106, 210 118" stroke="#197a4b" stroke-width="2" fill="none" stroke-dasharray="5 5" stroke-linecap="round"/>
       <path d="M218 112 l-10 6 3 -11" fill="#197a4b"/>
@@ -768,8 +777,10 @@ html.cl-guide-open #cl-guide{ display:flex; }
     <strong>消えるわけではありません。</strong>一覧の一番下、「完了済み」の区切り線の下へ移動するだけです。</p>
     <ul class="cl-g-list">
       <li><strong>チェック</strong> … 完了にする／完了を取り消す。よく使うのでボタンのまま出しています</li>
-      <li><strong>「…」（3点リーダー）</strong> … <strong>編集・削除・完了</strong>をここにまとめました。
-        めったに使わない操作で押し間違えないためです</li>
+      <li><strong>「…」（3点リーダー）</strong> … <strong>編集・担当者を変更・削除・完了</strong>を
+        ここにまとめました。めったに使わない操作で押し間違えないためです</li>
+      <li><strong>担当者を間違えたときは、書き直さなくて大丈夫。</strong>「…」→「担当者を変更」で
+        別の人に付け替えられます。<strong>本文のハイライトの色もその場で変わります</strong>。返信も同じように直せます</li>
       <li>誰がいつ完了にしたかが、カードに残ります。<strong>並び順（最後に書いた時刻）は変わりません</strong></li>
     </ul>
     <div class="cl-g-tip">
@@ -1009,7 +1020,8 @@ html.cl-guide-open #cl-guide{ display:flex; }
       <tr><td>一覧のカードをクリック</td><td>本文のその場所までスクロール</td></tr>
       <tr><td>ピンをドラッグ</td><td>ピンの位置を動かす</td></tr>
       <tr><td>カードのチェック</td><td>完了 / 完了の取り消し</td></tr>
-      <tr><td>カードの「…」</td><td>編集 / 削除 / 完了</td></tr>
+      <tr><td>カードの「…」</td><td>編集 / 担当者を変更 / 削除 / 完了</td></tr>
+      <tr><td>返信の「…」</td><td>編集 / 担当者を変更 / 削除</td></tr>
       <tr><td>名前の横のチップ</td><td>優先度を 必須 → 要望 → 軽微 → なし と切り替え</td></tr>
       <tr><td>ボタンにマウスを重ねる</td><td>そのボタンのショートカットが出ます</td></tr>
     </table>
@@ -1045,13 +1057,14 @@ html.cl-guide-open #cl-guide{ display:flex; }
 (function () {
   'use strict';
   if (window.__commentLayer) return;
-  var VERSION = '2.5.0';
+  var VERSION = '2.6.0';
 
   var comments = [], users = [], pinMode = false, draft = null, dirty = false, activeId = null, booted = false;
-  var activeUserId = null, toastTimer = null, openMenuId = null;
-  // 新規ユーザーに割り当てる色。既存の色とかぶらない先頭から使い、尽きたらランダムに逃がす。
-  // 値はDADSのプリミティブから、キーカラー（青）と紛れない色相だけを選んである
-  var USER_PALETTE = ['#008299', '#c74700', '#197a4b', '#5c10be', '#aa00aa', '#0066be', '#a90000', '#618e00'];
+  var activeUserId = null, toastTimer = null;
+  var openMenuId = null, openMenuRid = null, menuMode = 'main';
+  // 新規ユーザーに割り当てる色。DADSのプリミティブから、キーカラー（青）と紛れない色相を選び、
+  // ピンの白文字が読める明度（白とのコントラスト比 4.5 以上）のものだけを採ってある
+  var USER_PALETTE = ['#008299', '#c74700', '#197a4b', '#5c10be', '#aa00aa', '#0066be', '#a90000', '#507500'];
   var DEFAULT_USER = { id: 'u1', name: 'レビュアー1', color: '#008299' };
   var host = null, pinBox = null, savedRange = null;
   var SMOOTH = matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
@@ -1079,7 +1092,9 @@ html.cl-guide-open #cl-guide{ display:flex; }
     reply: 'M10 19v-2h5.6c.9 0 1.7-.29 2.4-.875.7-.583 1.05-1.325 1.05-2.225s-.35-1.642-1.05-2.225C17.3 11.09 16.5 10.8 15.6 10.8H7.8l2.6 2.6L9 14.8 4 9.8l5-5 1.4 1.4-2.6 2.6h7.8c1.45 0 2.7.48 3.75 1.438C20.4 11.196 20.925 12.4 20.925 13.9s-.525 2.704-1.575 3.663C18.3 18.52 17.05 19 15.6 19H10Z',
     pin: 'M12 12c.55 0 1.02-.196 1.412-.587C13.804 11.02 14 10.55 14 10s-.196-1.02-.588-1.412A1.926 1.926 0 0 0 12 8c-.55 0-1.02.196-1.412.588A1.926 1.926 0 0 0 10 10c0 .55.196 1.02.588 1.413.391.391.862.587 1.412.587Zm0 10c-2.683-2.283-4.687-4.404-6.012-6.363C4.663 13.679 4 11.867 4 10.2c0-2.5.804-4.492 2.413-5.975C8.02 2.742 9.883 2 12 2s3.98.742 5.588 2.225C19.196 5.708 20 7.7 20 10.2c0 1.667-.663 3.479-1.988 5.437C16.688 17.596 14.683 19.717 12 22Z',
     warn: 'M1 21 12 2l11 19H1Zm3.45-2h15.1L12 6 4.45 19ZM12 18c.283 0 .52-.096.712-.288A.968.968 0 0 0 13 17a.968.968 0 0 0-.288-.712A.968.968 0 0 0 12 16a.968.968 0 0 0-.712.288A.968.968 0 0 0 11 17c0 .283.096.52.288.712.191.192.429.288.712.288Zm-1-3h2v-5h-2v5Z',
-    pencilSm: 'M5 19h1.4l8.6-8.6-1.4-1.4L5 17.6V19Zm12.85-8.6L7.25 21H3v-4.25l10.6-10.6 4.25 4.25Z'
+    pencilSm: 'M5 19h1.4l8.6-8.6-1.4-1.4L5 17.6V19Zm12.85-8.6L7.25 21H3v-4.25l10.6-10.6 4.25 4.25Z',
+    person: 'M12 12c-1.1 0-2.042-.392-2.825-1.175C8.392 10.042 8 9.1 8 8s.392-2.042 1.175-2.825C9.958 4.392 10.9 4 12 4s2.042.392 2.825 1.175C15.608 5.958 16 6.9 16 8s-.392 2.042-1.175 2.825C14.042 11.608 13.1 12 12 12Zm-8 8v-2.8c0-.567.146-1.087.438-1.563A2.91 2.91 0 0 1 5.6 14.55a14.843 14.843 0 0 1 3.15-1.163A13.76 13.76 0 0 1 12 13c1.1 0 2.183.129 3.25.387 1.067.259 2.117.646 3.15 1.163.483.25.87.612 1.162 1.087.292.476.438.996.438 1.563V20H4Z',
+    back: 'M9.55 18 3.55 12l6-6 1.425 1.425L7.4 11h13.05v2H7.4l3.575 3.575L9.55 18Z'
   };
   function svgIcon(name, size, cls) {
     return '<svg class="cl-i' + (cls ? ' ' + cls : '') + '" data-s="' + (size || 20) +
@@ -1296,6 +1311,27 @@ html.cl-guide-open #cl-guide{ display:flex; }
         var rd = byId(action.id);
         if (!rd) return;
         rd.replies = repliesOf(rd).filter(function (x) { return x.id !== action.replyId; });
+        break;
+      }
+      // 担当者の付け替え。書き直させないための修正操作なので、本文は触らないし
+      // updatedAt も動かさない（名前を直しただけでカードが一番上に飛ぶと、読んでいた場所を見失う）
+      case 'reassign': {
+        var ac = byId(action.id);
+        if (!ac) return;
+        var au = users.filter(function (x) { return x.id === action.userId; })[0];
+        if (!au) return;
+        var acol = safeColor(au.color);
+        if (action.replyId) {
+          var ar = repliesOf(ac).filter(function (x) { return x.id === action.replyId; })[0];
+          if (!ar) return;
+          ar.author = au.name;
+          ar.color = acol;
+        } else {
+          ac.author = au.name;
+          ac.color = acol;
+          paintHighlight(ac.id, acol);   // 本文のハイライトとピンの色も、その場で新しい担当者の色にする
+        }
+        activeId = ac.id;
         break;
       }
       case 'delete': {
@@ -1950,14 +1986,108 @@ html.cl-guide-open #cl-guide{ display:flex; }
     }
   }
 
-  // 既存の色とかぶらないパレットの先頭から割り当て、尽きたらランダムへ逃がす
-  function nextUserColor() {
-    var used = {};
-    users.forEach(function (u) { used[safeColor(u.color).toLowerCase()] = true; });
-    for (var i = 0; i < USER_PALETTE.length; i++) {
-      if (!used[USER_PALETTE[i].toLowerCase()]) return USER_PALETTE[i];
+  /* ==========================================
+     新規ユーザーの色選び
+     v2.5 までは「パレットの未使用のものを先頭から」だった。順番はレビュアーの人数と
+     無関係なので、3人目で1人目とほぼ同じ色（OKLab距離 0.116）が出て、
+     ハイライトを見ても誰の指摘か分からなくなっていた。
+     v2.6 は「いま使われているどの色からも、いちばん遠い色」を選ぶ。
+     距離は sRGB のユークリッド距離ではなく OKLab で測る。sRGB の距離は
+     人間の見た目の差と一致せず、緑どうしを「遠い」と誤判定する。
+     ========================================== */
+  var CLOSE_ENOUGH = 0.15;   // これ未満しか離せないなら、パレットを諦めて色相を回して探す
+
+  function srgbToLinear(v) { return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }
+  function linearToSrgb(v) { return v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(Math.max(v, 0), 1 / 2.4) - 0.055; }
+
+  function toOklab(hex) {
+    var m = /^#([0-9a-fA-F]{6})$/.exec(String(hex || ''));
+    if (!m) {
+      var s = /^#([0-9a-fA-F]{3})$/.exec(String(hex || ''));
+      if (!s) return null;
+      m = [null, s[1].replace(/./g, function (ch) { return ch + ch; })];
     }
-    return '#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0');
+    var n = parseInt(m[1], 16);
+    var r = srgbToLinear(((n >> 16) & 255) / 255),
+        g = srgbToLinear(((n >> 8) & 255) / 255),
+        b = srgbToLinear((n & 255) / 255);
+    var l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+    var m2 = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+    var s2 = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+    return [0.2104542553 * l + 0.7936177850 * m2 - 0.0040720468 * s2,
+            1.9779984951 * l - 2.4285922050 * m2 + 0.4505937099 * s2,
+            0.0259040371 * l + 0.7827717662 * m2 - 0.8086757660 * s2];
+  }
+
+  function oklabDist(a, b) {
+    return Math.sqrt((a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1]) + (a[2] - b[2]) * (a[2] - b[2]));
+  }
+
+  // OKLCH から16進へ。明度 0.50 は、ピンの白文字が読める（白とのコントラスト比 5.2 以上）帯
+  function oklchHex(L, C, deg) {
+    var h = deg * Math.PI / 180, a = C * Math.cos(h), b2 = C * Math.sin(h);
+    var l_ = L + 0.3963377774 * a + 0.2158037573 * b2;
+    var m_ = L - 0.1055613458 * a - 0.0638541728 * b2;
+    var s_ = L - 0.0894841775 * a - 1.2914855480 * b2;
+    var l = l_ * l_ * l_, m = m_ * m_ * m_, s = s_ * s_ * s_;
+    var rgb = [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+               -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+               -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s];
+    return '#' + rgb.map(function (v) {
+      var x = Math.round(Math.max(0, Math.min(1, linearToSrgb(v))) * 255);
+      return x.toString(16).padStart(2, '0');
+    }).join('');
+  }
+
+  // パレットを使い切ったとき用の予備。色相を6度ずつ回した60色
+  var HUE_RING = null;
+  function hueRing() {
+    if (!HUE_RING) {
+      HUE_RING = [];
+      for (var d = 0; d < 360; d += 6) HUE_RING.push(oklchHex(0.50, 0.13, d));
+    }
+    return HUE_RING;
+  }
+
+  function nextUserColor() {
+    var usedLab = [];
+    var usedHex = {};
+    users.forEach(function (u) {
+      var hex = safeColor(u.color);
+      usedHex[hex.toLowerCase()] = true;
+      var lab = toOklab(hex);
+      if (lab) usedLab.push(lab);
+    });
+    if (!usedLab.length) return USER_PALETTE[0];
+
+    // 「使用中のどれかに最も近い距離」を最大にする色を選ぶ（最遠点サンプリング）
+    var score = function (hex) {
+      var lab = toOklab(hex);
+      if (!lab) return -1;
+      var min = Infinity;
+      for (var i = 0; i < usedLab.length; i++) {
+        var d = oklabDist(lab, usedLab[i]);
+        if (d < min) min = d;
+      }
+      return min;
+    };
+
+    var best = null, bestScore = -1;
+    for (var i = 0; i < USER_PALETTE.length; i++) {
+      if (usedHex[USER_PALETTE[i].toLowerCase()]) continue;   // 同じ色は配らない
+      var s = score(USER_PALETTE[i]);
+      if (s > bestScore + 1e-9) { bestScore = s; best = USER_PALETTE[i]; }
+    }
+    // パレットに残りが無い／残っていても近すぎるときだけ、色相環から探す。
+    // 先にパレットを使い切るのは、DADSの色のほうが彩度と明度が揃っていて見やすいから
+    if (!best || bestScore < CLOSE_ENOUGH) {
+      var ring = hueRing();
+      for (var k = 0; k < ring.length; k++) {
+        var rs = score(ring[k]);
+        if (rs > bestScore + 1e-9) { bestScore = rs; best = ring[k]; }
+      }
+    }
+    return best || USER_PALETTE[0];
   }
 
   function initUserCombo() {
@@ -2438,7 +2568,27 @@ html.cl-guide-open #cl-guide{ display:flex; }
     });
 
     list.scrollTop = keepScroll;
+    positionMenu();
     if (activeId) nodesFor(activeId).forEach(function (n) { n.classList.add('cl-active'); });
+  }
+
+  /* 「…」メニューは一覧（overflow:auto）の中に置いてある。本文テキストの走査から
+     除外し忘れる穴を増やさないための配置だが、代わりに一覧の下端で見切れる。
+     開いたあとで実測し、下に入らなければ上向きに開く。どちらにも入らなければ一覧を送る。
+     CSSのはみ出し判定だけでは足りない（カードの高さは中身次第で毎回変わる）。 */
+  function positionMenu() {
+    var menu = $('#cl-list .cl-menu'), list = $('#cl-list');
+    if (!menu || !list) return;
+    menu.style.top = ''; menu.style.bottom = '';
+    var lr = list.getBoundingClientRect();
+    menu.style.maxHeight = Math.max(132, Math.min(264, lr.height - 24)) + 'px';
+    if (menu.getBoundingClientRect().bottom <= lr.bottom - 4) return;
+    menu.style.top = 'auto';
+    menu.style.bottom = 'calc(100% + 2px)';
+    if (menu.getBoundingClientRect().top >= lr.top + 4) return;
+    // 上下どちらにも収まらないときは、元の向きに戻して一覧側をスクロールする
+    menu.style.top = ''; menu.style.bottom = '';
+    list.scrollTop += menu.getBoundingClientRect().bottom - lr.bottom + 12;
   }
 
   function cardFor(c) {
@@ -2463,14 +2613,21 @@ html.cl-guide-open #cl-guide{ display:flex; }
       ? '<div class="cl-quote cl-quote-pin">' + svgIcon('pin', 16) + '画面へのピン留め</div>'
       : '<div class="cl-quote">' + esc(c.quote) + '</div>';
 
+    // 返信の操作もカードと同じく「…」に集約する。返信でも担当者を間違えることは同じだけ起きるので、
+    // ここだけ小さなアイコンが2つ並ぶ形を残すと、操作の置き場所が2種類あることになる
     var reps = repliesOf(c).map(function (r) {
       return '<div class="cl-reply">' +
         '<div class="cl-rmeta">' +
         '<span class="cl-author-dot" style="background:' + esc(safeColor(r.color)) + '"></span>' +
         '<span style="font-weight:700;color:var(--cl-gray-800)">' + esc(r.author) + '</span>' +
         '<span>' + esc(fmtShort(r.updatedAt || r.date)) + '</span>' +
-        '<button class="cl-iconbtn" style="width:24px;height:24px" data-cl="reply-edit" data-id="' + esc(c.id) + '" data-rid="' + esc(r.id) + '" data-cl-tip="返信を編集" aria-label="返信を編集">' + svgIcon('edit', 16) + '</button>' +
-        '<button class="cl-iconbtn" style="width:24px;height:24px" data-danger data-cl="reply-del" data-id="' + esc(c.id) + '" data-rid="' + esc(r.id) + '" data-cl-tip="返信を削除" aria-label="返信を削除">' + svgIcon('trash', 16) + '</button>' +
+        '<span class="cl-rmenu">' +
+          '<button class="cl-iconbtn" style="width:24px;height:24px" data-cl="reply-menu" data-id="' + esc(c.id) +
+            '" data-rid="' + esc(r.id) + '" aria-haspopup="menu" aria-expanded="' +
+            (openMenuId === c.id && openMenuRid === r.id ? 'true' : 'false') +
+            '" data-cl-tip="編集・担当者・削除" aria-label="返信のその他の操作">' + svgIcon('more', 16) + '</button>' +
+          (openMenuId === c.id && openMenuRid === r.id ? menuHTML(c, r) : '') +
+        '</span>' +
         '</div><div class="cl-rtext">' + esc(r.text) + '</div></div>';
     }).join('');
 
@@ -2488,9 +2645,9 @@ html.cl-guide-open #cl-guide{ display:flex; }
           '" data-cl-tip="' + (done ? '完了を取り消す' : '完了にする') + '" aria-label="' +
           (done ? '完了を取り消す' : '完了にする') + '">' + svgIcon(done ? 'undo' : 'check', 20) + '</button>' +
         '<button class="cl-iconbtn" data-cl="menu" data-id="' + esc(c.id) +
-          '" aria-haspopup="menu" aria-expanded="' + (openMenuId === c.id ? 'true' : 'false') +
-          '" data-cl-tip="編集・削除・完了" aria-label="その他の操作">' + svgIcon('more', 20) + '</button>' +
-        (openMenuId === c.id ? menuHTML(c, done) : '') +
+          '" aria-haspopup="menu" aria-expanded="' + (openMenuId === c.id && !openMenuRid ? 'true' : 'false') +
+          '" data-cl-tip="編集・担当者・削除・完了" aria-label="その他の操作">' + svgIcon('more', 20) + '</button>' +
+        (openMenuId === c.id && !openMenuRid ? menuHTML(c, null) : '') +
       '</div></div>' + quote +
       '<div class="cl-body">' + esc(c.text) + '</div>' +
       (orphan ? '<div class="cl-orphan">' + svgIcon('warn', 16) +
@@ -2513,22 +2670,48 @@ html.cl-guide-open #cl-guide{ display:flex; }
     return item;
   }
 
-  function menuHTML(c, done) {
-    return '<div class="cl-menu" role="menu">' +
-      '<button class="cl-menu-item" role="menuitem" data-cl="edit" data-id="' + esc(c.id) + '">' +
+  // r を渡すと返信用のメニュー、null ならコメント用。
+  // 2階層目（担当者の選択）は別ダイアログにせず、同じポップアップの中身を差し替える
+  function menuHTML(c, r) {
+    var idAttr = ' data-id="' + esc(c.id) + '"' + (r ? ' data-rid="' + esc(r.id) + '"' : '');
+    if (menuMode === 'assign') return assignMenuHTML(c, r, idAttr);
+    var done = isDone(c);
+    var out = '<div class="cl-menu" role="menu">' +
+      '<button class="cl-menu-item" role="menuitem" data-cl="' + (r ? 'reply-edit' : 'edit') + '"' + idAttr + '>' +
         svgIcon('edit', 18) + '編集</button>' +
-      '<button class="cl-menu-item" role="menuitem" data-danger data-cl="del" data-id="' + esc(c.id) + '">' +
-        svgIcon('trash', 18) + '削除</button>' +
-      '<div class="cl-menu-sep"></div>' +
-      '<button class="cl-menu-item" role="menuitem" data-cl="resolve" data-id="' + esc(c.id) + '">' +
-        svgIcon(done ? 'undo' : 'check', 18) + (done ? '完了を取り消す' : '完了にする') + '</button>' +
-      '</div>';
+      '<button class="cl-menu-item" role="menuitem" data-cl="assign"' + idAttr + '>' +
+        svgIcon('person', 18) + '担当者を変更</button>' +
+      '<button class="cl-menu-item" role="menuitem" data-danger data-cl="' + (r ? 'reply-del' : 'del') + '"' + idAttr + '>' +
+        svgIcon('trash', 18) + '削除</button>';
+    if (!r) {
+      out += '<div class="cl-menu-sep"></div>' +
+        '<button class="cl-menu-item" role="menuitem" data-cl="resolve" data-id="' + esc(c.id) + '">' +
+          svgIcon(done ? 'undo' : 'check', 18) + (done ? '完了を取り消す' : '完了にする') + '</button>';
+    }
+    return out + '</div>';
   }
 
-  function closeMenu() {
-    if (openMenuId === null) return;
-    openMenuId = null;
-    render();
+  function assignMenuHTML(c, r, idAttr) {
+    var cur = r ? r.author : c.author;
+    var rows = users.map(function (u) {
+      var on = u.name === cur;
+      return '<button class="cl-menu-item" role="menuitemradio" aria-checked="' + (on ? 'true' : 'false') +
+        '" data-cl="assign-to"' + idAttr + ' data-uid="' + esc(u.id) + '">' +
+        '<span class="cl-author-dot" style="background:' + esc(safeColor(u.color)) + '"></span>' +
+        '<span class="cl-menu-label">' + esc(u.name) + '</span>' +
+        (on ? svgIcon('check', 16, 'cl-menu-check') : '') + '</button>';
+    }).join('');
+    return '<div class="cl-menu" role="menu">' +
+      '<button class="cl-menu-item cl-menu-back" data-cl="menu-back"' + idAttr + '>' +
+        svgIcon('back', 18) + '戻る</button>' +
+      '<div class="cl-menu-sep"></div>' +
+      '<div class="cl-menu-head">担当者を選ぶ</div>' + rows + '</div>';
+  }
+
+  function closeMenu(skipRender) {
+    if (openMenuId === null && openMenuRid === null && menuMode === 'main') return;
+    openMenuId = null; openMenuRid = null; menuMode = 'main';
+    if (!skipRender) render();
   }
 
   function replyDraft(c) {
@@ -2648,7 +2831,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
     // 開きっぱなしのポップアップは、そのまま書き出すと「開いた状態」が焼き込まれる。
     // コンボの候補一覧はJSで組み立てているので、閉じずに出すとユーザー名が二重に入る
     setCombo(false);
-    openMenuId = null;
+    closeMenu(true);
     setMaster(false);
     var ul = $('#cl-user-list'); if (ul) ul.innerHTML = '';
     $('#cl-toolbar').style.display = 'none';
@@ -2719,8 +2902,10 @@ html.cl-guide-open #cl-guide{ display:flex; }
     var t = e.target.closest ? e.target.closest('[data-cl]') : null;
     if (!t) return;
     var a = t.getAttribute('data-cl');
-    // 「…」以外を押したら、開きっぱなしのメニューはたたむ
-    if (a !== 'menu' && openMenuId && !t.closest('.cl-menu')) openMenuId = null;
+    // メニューを組み立てている最中の操作以外は、開きっぱなしのメニューをたたむ。
+    // 「…」を足すたびにここへ足し忘れると、押した先でメニューが残って重なる
+    var KEEP_MENU = { 'menu': 1, 'reply-menu': 1, 'assign': 1, 'menu-back': 1 };
+    if (!KEEP_MENU[a]) closeMenu(true);
     if (a === 'close') setSidebar(false);
     else if (a === 'toggle-sidebar') setSidebar(!root.classList.contains('cl-open'));
     else if (a === 'pinmode') setPinMode(!pinMode);
@@ -2728,8 +2913,21 @@ html.cl-guide-open #cl-guide{ display:flex; }
     else if (a === 'add-user') addUserFromForm();
     else if (a === 'menu') {
       var mid = t.getAttribute('data-id');
-      openMenuId = openMenuId === mid ? null : mid;
+      var same = openMenuId === mid && !openMenuRid;
+      openMenuId = same ? null : mid; openMenuRid = null; menuMode = 'main';
       render();
+    }
+    else if (a === 'reply-menu') {
+      var rmid = t.getAttribute('data-id'), rrid = t.getAttribute('data-rid');
+      var rsame = openMenuId === rmid && openMenuRid === rrid;
+      openMenuId = rsame ? null : rmid; openMenuRid = rsame ? null : rrid; menuMode = 'main';
+      render();
+    }
+    else if (a === 'assign') { menuMode = 'assign'; render(); }
+    else if (a === 'menu-back') { menuMode = 'main'; render(); }
+    else if (a === 'assign-to') {
+      commit({ type: 'reassign', id: t.getAttribute('data-id'),
+               replyId: t.getAttribute('data-rid') || null, userId: t.getAttribute('data-uid') });
     }
     else if (a === 'edit') editComment(t.getAttribute('data-id'));
     else if (a === 'del') deleteComment(t.getAttribute('data-id'));
@@ -2772,7 +2970,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
   // カードの外側を押したら「…」メニューを閉じる
   document.addEventListener('mousedown', function (e) {
     if (!openMenuId) return;
-    if (e.target.closest && e.target.closest('.cl-menu, [data-cl="menu"]')) return;
+    if (e.target.closest && e.target.closest('.cl-menu, [data-cl="menu"], [data-cl="reply-menu"]')) return;
     closeMenu();
   });
 
@@ -2783,6 +2981,16 @@ html.cl-guide-open #cl-guide{ display:flex; }
     get users() { return users; },
     get activeUserId() { return activeUserId; },
     get openMenuId() { return openMenuId; },
+    get openMenuRid() { return openMenuRid; },
+    get menuMode() { return menuMode; },
+    reassign: function (id, userId, replyId) {
+      commit({ type: 'reassign', id: id, userId: userId, replyId: replyId || null });
+    },
+    _nextUserColor: function () { return nextUserColor(); },
+    _colorDistance: function (a, b) {
+      var x = toOklab(a), y = toOklab(b);
+      return (x && y) ? oklabDist(x, y) : null;
+    },
     get comboOpen() { return comboOpen; },
     setActiveUser: setActiveUser,
     setCombo: setCombo, setMaster: setMaster, addUserFromForm: addUserFromForm, deleteUser: deleteUser,
@@ -2811,4 +3019,4 @@ html.cl-guide-open #cl-guide{ display:flex; }
   };
 })();
 </script>
-<!-- ===== COMMENT-LAYER v2.5.0 : END ===== -->
+<!-- ===== COMMENT-LAYER v2.6.0 : END ===== -->
