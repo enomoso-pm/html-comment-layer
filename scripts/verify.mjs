@@ -7,6 +7,7 @@ if (!FILE) { console.error('使い方: node verify.mjs <target.html>'); process.
 
 const b = await launch(9340);
 let pass = 0, fail = 0;
+const tmpGens = [];   // 世代テストで作る一時ファイル
 const ok = (name, cond, detail = '') => {
   (cond ? pass++ : fail++);
   console.log(`${cond ? '✅' : '❌'} ${name}${detail ? '  … ' + detail : ''}`);
@@ -144,6 +145,7 @@ try {
   `);
   const r8 = JSON.parse(t8);
   ok('書き出しに描画済みDOMが混ざらない', !r8.一覧DOMが残っている && !r8.ピンDOMが残っている, JSON.stringify(r8));
+
   ok('書き出しにコメントとハイライトが入っている', r8.コメント件数 > 0 && r8.ハイライト数 > 0,
      `コメント${r8.コメント件数}件 / ハイライト${r8.ハイライト数}個`);
 
@@ -350,7 +352,7 @@ try {
     __commentLayer.exportHTML();
     URL.createObjectURL = o; window.confirm = oc; HTMLAnchorElement.prototype.click = k;
     return cap.text().then(t => JSON.stringify({
-      aId, bId, dId, bQuote: bp, oldUniqQuote: ou, ambQuote: d, html: t }));
+      aId, bId, dId, aQuote: a, bQuote: bp, oldUniqQuote: ou, ambQuote: d, html: t }));
   `));
   if (v1.fatal) throw new Error(v1.fatal);
 
@@ -383,6 +385,20 @@ try {
   fsm.writeFileSync(tmpV2, htmlV2);
   b.dialog.log.length = 0;
   await b.goto('file://' + encodeURI(tmpV2));
+
+  // 資料側のスクリプトが開くたびにDOMを組み立て直す資料（実サイトの保存ページなど）では、
+  // 書き出して開き直した時点で本文が二重になり、どの引用も一意でなくなる。
+  // これはレイヤーの不具合ではなく資料側の性質で、レイヤーは「特定できないものは貼らない」を
+  // 正しく守っているだけ。ここを普通に判定すると、二重描画の出方しだいで
+  // 落ちたり通ったりする（＝オオカミ少年になる）ので、条件を検出して明示的に飛ばす。
+  const selfRebuild = JSON.parse(await b.evalJS(PAGE_HELPERS + `
+    return JSON.stringify({ aCount: __vt.count(${JSON.stringify(v1.aQuote)}) });
+  `));
+  if (selfRebuild.aCount !== 1) {
+    console.log(`⏭️  版またぎ再アンカーの検査を飛ばす … この資料は開くたびに中身を組み立て直すため、` +
+      `書き出して開き直すと引用が ${selfRebuild.aCount} 箇所に増える（一意に特定できる資料でのみ検査できる）`);
+    try { fsm.unlinkSync(tmpV2); } catch {}
+  } else {
   const r22 = JSON.parse(await b.evalJS(`
     const hl = id => document.querySelectorAll('.comment-highlight[data-id="' + id + '"]').length;
     return JSON.stringify({
@@ -411,7 +427,43 @@ try {
   ok('曖昧時の抑制: 文脈なしの重複引用は貼らず、文脈ありは1箇所に特定される',
      (r22.oldAmb === null || r22.oldAmb === 0) && dOk,
      `曖昧=${r22.oldAmb}件 文脈あり=${r22.d === null ? 'なし' : r22.d.n + '個(" ' + r22.d.text + ' ")'}`);
+
+  // 22b. 貼れなかった理由を取り違えない。
+  //      「本文から消えた（＝指摘が反映された）」と「同じ文が複数あって特定できない」は
+  //      利用者にとって意味がまったく違う。後者を前者の文言で出すと、
+  //      直っていないのに「対応済み」と読まれる
+  const r22b = JSON.parse(await b.evalJS(`
+    const reason = __commentLayer.anchorReason;
+    const bId = '${v1.bId}';
+    const ambId = ${v1.ambQuote ? "'txt-oldamb'" : 'null'};
+    const cardText = id => {
+      const el = document.querySelector('#cl-item-' + id + ' .cl-orphan');
+      return el ? el.textContent : null;
+    };
+    return JSON.stringify({
+      消えた側の理由: reason[bId] || null,
+      消えた側の文言: cardText(bId),
+      曖昧側の理由: ambId ? (reason[ambId] || null) : null,
+      曖昧側の文言: ambId ? cardText(ambId) : null,
+      通知が出た: ambId ? document.getElementById('cl-toast').classList.contains('show') : null,
+      通知の種類: document.getElementById('cl-toast').getAttribute('data-type')
+    });
+  `));
+  ok('本文から消えた指摘は「書き換わった可能性」として案内される',
+     r22b.消えた側の理由 === 'none' && /書き換わった/.test(r22b.消えた側の文言 || ''),
+     JSON.stringify(r22b));
+  if (r22b.曖昧側の理由 !== null) {
+    ok('特定できなかった指摘は「反映されたわけではない」と明示され、別の文言になる',
+       r22b.曖昧側の理由 === 'ambiguous'
+         && /複数/.test(r22b.曖昧側の文言 || '')
+         && /反映されたわけではありません/.test(r22b.曖昧側の文言 || '')
+         && !/指摘が反映された）可能性/.test(r22b.曖昧側の文言 || ''),
+       JSON.stringify(r22b));
+    ok('特定できなかったときは、コメントが無事であることをまとめて通知する',
+       r22b.通知が出た === true && r22b.通知の種類 === 'warn', JSON.stringify(r22b));
+  }
   try { fsm.unlinkSync(tmpV2); } catch {}
+  }
 
   // 退避ハッシュ: 本文が書き換わったファイルでは、旧オフセットではなく引用照合で復元される
   const tmpV3 = pathm.join(osm.tmpdir(), 'cl-hash-' + Date.now().toString(36) + '.html');
@@ -1314,6 +1366,47 @@ try {
   ok('v2.4のテスト中もJSエラーが出ない', errs6.length === 0, errs6.map(e => e.params.exceptionDetails.text).join(' / '));
   try { fsm.unlinkSync(tmpV5); } catch {}
 
+  // 8b. 保存して開き直すのを繰り返しても、レイヤーの器が増えない。
+  //     v2.7 まで #cl-pins（ピンの器）は中身だけ空にして器を残していたため、
+  //     世代ごとに1個ずつ増え、idが重複したファイルが出回っていた
+  const r8b = await (async () => {
+    let cur = ABS, gens = [];
+    for (let g = 0; g <= 3; g++) {
+      await b.goto('file://' + encodeURI(cur));
+      gens.push(JSON.parse(await b.evalJS(`
+        const ids = {};
+        document.querySelectorAll('[id]').forEach(e => { ids[e.id] = (ids[e.id]||0)+1; });
+        return JSON.stringify({
+          pins: document.querySelectorAll('[id="cl-pins"]').length,
+          要素数: document.getElementsByTagName('*').length,
+          重複id: Object.keys(ids).filter(k => ids[k] > 1)
+        });`)));
+      if (g === 3) break;
+      const out = await b.evalJS(`
+        let cap=null; const o=URL.createObjectURL; URL.createObjectURL=x=>{cap=x;return 'blob:t';};
+        const oc=window.confirm; window.confirm=()=>true;
+        const k=HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click=function(){};
+        __commentLayer.exportHTML();
+        URL.createObjectURL=o; window.confirm=oc; HTMLAnchorElement.prototype.click=k;
+        return cap.text();`);
+      cur = pathm.join(osm.tmpdir(), `cl-gen${g + 1}-` + Date.now().toString(36) + '.html');
+      fsm.writeFileSync(cur, out);
+      tmpGens.push(cur);
+    }
+    return gens;
+  })();
+  ok('保存して開き直すのを繰り返しても、ピンの器が増えない',
+     r8b.every(g => g.pins === 1),
+     r8b.map(g => g.pins + '個').join(' → '));
+  ok('保存を繰り返してもidが重複しない',
+     r8b.every(g => g.重複id.length === 0),
+     r8b.map(g => g.重複id.join('/') || 'なし').join(' → '));
+  ok('保存を繰り返してもレイヤーぶんの要素が増え続けない',
+     r8b[3].要素数 <= r8b[0].要素数,
+     r8b.map(g => g.要素数).join(' → '));
+  // 以降のテストのために元のファイルへ戻す
+  await b.goto('file://' + encodeURI(ABS));
+
   // ===== ここから v2.4.1 追加分（host が body に落ちる資料）=====
   // 検査対象の資料が .wrap 等を持っていると、ドック外のUI（使い方ボタン・トースト）は
   // host の外側に居るので、除外し忘れても何も起きない。レイヤーにUIを足したときの
@@ -1394,6 +1487,7 @@ try {
 } catch (e) {
   fail++; console.log('❌ 実行エラー: ' + e.message);
 } finally {
+  for (const f of tmpGens) { try { fsm.unlinkSync(f); } catch {} }
   b.close();
 }
 console.log(`\n${pass} passed / ${fail} failed`);

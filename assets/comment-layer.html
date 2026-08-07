@@ -1,5 +1,5 @@
 <!-- ===================================================================
-     COMMENT-LAYER v2.7.0 : START
+     COMMENT-LAYER v2.8.0 : START
      HTML資料にレビューコメント機能を後付けするドロップイン・ブロック。
      この START 〜 END までを丸ごと差し替えればバージョンアップできる。
      資料側に必要な条件：
@@ -397,6 +397,9 @@ html.cl-open #cl-toast{ left:calc(50% - var(--cl-w) / 2); }
 @media (max-width:900px){ html.cl-open #cl-toast{ left:50%; } }
 .cl-toast-head{ display:flex; align-items:center; gap:7px; font-weight:700; color:var(--cl-green-1000);
   font-size:14px; margin-bottom:4px; }
+#cl-toast[data-type="warn"]{ border-color:var(--cl-orange-800);
+  box-shadow:inset 8px 0 0 0 var(--cl-orange-800), var(--cl-elev-6); }
+#cl-toast[data-type="warn"] .cl-toast-head{ color:var(--cl-orange-1000); }
 
 /* --- 使い方ガイド（押したときだけ出る。自動では絶対に出さない） --- */
 #cl-guide{ position:fixed; inset:0; z-index:9800; display:none; align-items:center; justify-content:center;
@@ -1084,12 +1087,14 @@ html.cl-guide-open #cl-guide{ display:flex; }
 (function () {
   'use strict';
   if (window.__commentLayer) return;
-  var VERSION = '2.7.0';
+  var VERSION = '2.8.0';
 
   var comments = [], users = [], pinMode = false, draft = null, dirty = false, activeId = null, booted = false;
   var activeUserId = null, toastTimer = null;
   var openMenuId = null, openMenuRid = null, menuMode = 'main';
   var assignQuery = '', assignIndex = -1;
+  // 再アンカーに失敗した理由を id ごとに覚えておき、カードの文言を出し分ける
+  var anchorReason = {};
   // 新規ユーザーに割り当てる色。DADSのプリミティブから、キーカラー（青）と紛れない色相を選び、
   // ピンの白文字が読める明度（白とのコントラスト比 4.5 以上）のものだけを採ってある
   var USER_PALETTE = ['#008299', '#c74700', '#197a4b', '#5c10be', '#aa00aa', '#0066be', '#a90000', '#507500'];
@@ -1170,6 +1175,14 @@ html.cl-guide-open #cl-guide{ display:flex; }
     host.setAttribute('data-cl-host', '');
     if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
 
+    // 前の版で書き出されたピンの器が残っていることがある。
+    // v2.7 まで、書き出し前に中身は空にしていたのに器そのものは外していなかったので、
+    // 保存して開き直すたびに #cl-pins が1個ずつ増え、idが重複していった。
+    // これから書き出すぶんは exportHTML() で外すが、すでに増えてしまったファイルのために
+    // 起動時にも掃除する（開き直すだけで元に戻る）
+    Array.prototype.slice.call(document.querySelectorAll('#cl-pins')).forEach(function (el) {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    });
     pinBox = document.createElement('div');
     pinBox.id = 'cl-pins';
     host.appendChild(pinBox);
@@ -1566,10 +1579,15 @@ html.cl-guide-open #cl-guide{ display:flex; }
     return true;
   }
 
-  // 一意に特定できた場合だけ貼る。0件、または絞っても複数なら貼らない
+  // 一意に特定できた場合だけ貼る。0件、または絞っても複数なら貼らない。
+  // 戻り値は成否ではなく「理由」。0件（＝本文から消えた）と複数（＝特定できない）は
+  // 利用者にとって意味がまったく違うので、ここで区別して持ち帰る
+  //   'ok'        … 貼れた
+  //   'none'      … 本文に見つからない（指摘が反映されて書き換わった可能性が高い）
+  //   'ambiguous' … 同じ文が複数あって1箇所に決められない（資料側が中身を組み立て直す場合に起きる）
   function tryAnchorByQuote(c, doc) {
     var nq = normalizeQuote(c.quote);
-    if (!nq) return false;
+    if (!nq) return 'none';
     var hits = findQuoteMatches(doc, nq);
     var chosen = -1;
     if (hits.length === 1) chosen = hits[0];
@@ -1580,13 +1598,13 @@ html.cl-guide-open #cl-guide{ display:flex; }
       }
       if (passed.length === 1) chosen = passed[0];
     }
-    if (chosen < 0) return false;
+    if (chosen < 0) return hits.length > 1 ? 'ambiguous' : 'none';
     try {
       var r = rangeFromOffsets(doc.map[chosen], doc.map[chosen + nq.length - 1] + 1);
-      if (!r) return false;
+      if (!r) return 'none';
       wrapRange(r, c.id, safeColor(c.color));
-      return true;
-    } catch (e) { return false; }
+      return 'ok';
+    } catch (e) { return 'none'; }
   }
 
   // 新規コメント保存時に、前後の本文テキストを記録する（改修5a）
@@ -1603,13 +1621,25 @@ html.cl-guide-open #cl-guide{ display:flex; }
   // 読み込み時、ハイライトを失っているテキストコメントの貼り直しを試みる（改修5b）。
   // DOMにしか触れないので、成否にかかわらず未保存フラグは立てない
   function reanchorOrphans() {
-    var doc = null;
+    var doc = null, ambiguous = 0;
+    anchorReason = {};
     comments.forEach(function (c) {
       if (c.type !== 'text') return;
       if (document.querySelector('.comment-highlight[data-id="' + c.id + '"]')) return;
       if (!doc) doc = normalizeWithMap(streamText());
-      tryAnchorByQuote(c, doc);
+      var why = tryAnchorByQuote(c, doc);
+      if (why !== 'ok') anchorReason[c.id] = why;
+      if (why === 'ambiguous') ambiguous++;
     });
+    // 「同じ文が複数あって決められない」が起きるのは、たいてい資料側のスクリプトが
+    // 開くたびに中身を組み立て直しているとき。1件ずつの警告だけだと
+    // 「指摘が反映されたのだ」と読み違えるので、原因と無事であることをまとめて伝える
+    if (ambiguous > 0) {
+      showToast('<div class="cl-toast-head">' + svgIcon('warn', 18) + '指摘の位置を復元できませんでした</div>' +
+        'この資料は開くたびに中身を組み立て直すため、同じ文章が複数現れて位置を特定できません' +
+        '（' + ambiguous + '件）。<strong>コメントそのものは失われていません。</strong>' +
+        'このまま読み書きも保存もできます。', 12000, 'warn');
+    }
   }
 
   function offerRestore() {
@@ -1714,10 +1744,11 @@ html.cl-guide-open #cl-guide{ display:flex; }
   }
 
   // 確認を求めない軽い通知。押すと即座に消せる。確認が要る操作（削除など）には使わない
-  function showToast(html, ms) {
+  function showToast(html, ms, type) {
     var el = $('#cl-toast');
     if (!el) return;
     el.innerHTML = html;
+    if (type) el.setAttribute('data-type', type); else el.removeAttribute('data-type');
     el.classList.add('show');
     clearTimeout(toastTimer);
     // 消えたら中身も捨てる。文面をDOMに残したままにすると、資料に data-comment-host が無く
@@ -1733,6 +1764,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
     if (!el) return;
     clearTimeout(toastTimer);
     el.classList.remove('show');
+    el.removeAttribute('data-type');
     el.innerHTML = '';
   }
 
@@ -2723,8 +2755,11 @@ html.cl-guide-open #cl-guide{ display:flex; }
         (openMenuId === c.id && !openMenuRid ? menuHTML(c, null) : '') +
       '</div></div>' + quote +
       '<div class="cl-body">' + esc(c.text) + '</div>' +
-      (orphan ? '<div class="cl-orphan">' + svgIcon('warn', 16) +
-        '<div>本文中に対象が見つかりません。資料の更新で該当箇所が書き換わった（指摘が反映された）可能性があります</div></div>' : '') +
+      (orphan ? '<div class="cl-orphan">' + svgIcon('warn', 16) + '<div>' +
+        (anchorReason[c.id] === 'ambiguous'
+          ? '同じ文章が本文に複数あるため、どこへの指摘か特定できませんでした。<strong>指摘が反映されたわけではありません。</strong>'
+          : '本文中に対象が見つかりません。資料の更新で該当箇所が書き換わった（指摘が反映された）可能性があります') +
+        '</div></div>' : '') +
       (done ? '<div class="cl-done-note">' + svgIcon('check', 16) + '完了' + (c.resolvedBy ? '（' + esc(c.resolvedBy) + '）' : '') +
               (fmtShort(c.resolvedAt) ? ' ' + esc(fmtShort(c.resolvedAt)) : '') + '</div>' : '') +
       (reps ? '<div class="cl-replies">' + reps + '</div>' : '');
@@ -2998,10 +3033,13 @@ html.cl-guide-open #cl-guide{ display:flex; }
     clearActive();
     activeId = null;
 
-    // 実行時に組み立てたDOMは保存しない（毎回焼き込まれてファイルが太るのを防ぐ）
-    var listHTML = $('#cl-list').innerHTML, pinHTML = pinBox.innerHTML;
+    // 実行時に組み立てたDOMは保存しない（毎回焼き込まれてファイルが太るのを防ぐ）。
+    // ピンは中身を空にするだけでなく、器ごと外す。器を残すと、起動時に作られる分と合わせて
+    // 保存のたびに1個ずつ増え、idが重複したファイルが出回る
+    var listHTML = $('#cl-list').innerHTML;
     $('#cl-list').innerHTML = '';
-    pinBox.innerHTML = '';
+    var pinParent = pinBox.parentNode, pinNext = pinBox.nextSibling;
+    if (pinParent) pinParent.removeChild(pinBox);
     var hostPos = host.getAttribute('style');
 
     // 閉じscriptタグや、差し込みブロックの境界マーカーそのものをコメントに書かれても、
@@ -3017,7 +3055,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
     var html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
 
     $('#cl-list').innerHTML = listHTML;
-    pinBox.innerHTML = pinHTML;
+    if (pinParent) pinParent.insertBefore(pinBox, pinNext);
     if (hostPos != null) host.setAttribute('style', hostPos);
 
     var name = decodeURIComponent((location.pathname.split('/').pop() || '')) || (document.title || 'document');
@@ -3137,6 +3175,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
     get openMenuId() { return openMenuId; },
     get openMenuRid() { return openMenuRid; },
     get menuMode() { return menuMode; },
+    get anchorReason() { return anchorReason; },
     reassign: function (id, userId, replyId) {
       commit({ type: 'reassign', id: id, userId: userId, replyId: replyId || null });
     },
@@ -3173,4 +3212,4 @@ html.cl-guide-open #cl-guide{ display:flex; }
   };
 })();
 </script>
-<!-- ===== COMMENT-LAYER v2.7.0 : END ===== -->
+<!-- ===== COMMENT-LAYER v2.8.0 : END ===== -->
