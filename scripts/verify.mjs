@@ -847,6 +847,33 @@ try {
     }));
   `));
   ok('書き出したファイルに送りアニメ用のクラスが焼き込まれない', r34.送りアニメのクラスが残らない, JSON.stringify(r34));
+
+  // 34b. トラックパッドの横スクロールは、一振りで1ページだけ送る。
+  //      慣性は振り方しだいで長さが変わるので、固定時間で止める作りだと2ページ送られる
+  const r34b = JSON.parse(await b.evalJS(`
+    const g = document.getElementById('cl-guide');
+    const burst = (dx, n) => { for (let i = 0; i < n; i++)
+      g.dispatchEvent(new WheelEvent('wheel', { deltaX: dx, deltaY: 0, bubbles: true, cancelable: true })); };
+    __commentLayer.setGuide(true); __commentLayer.guideGo(0);
+    burst(30, 25);                       // 慣性込みの一振り（合計750px相当）
+    const 一振り目 = __commentLayer.guideStep;
+    burst(30, 25);                       // 流れが途切れていないので受け付けない
+    const 続けて振っても = __commentLayer.guideStep;
+    return new Promise(res => setTimeout(() => {
+      burst(30, 25);                     // 途切れたあとの二振り目
+      const 二振り目 = __commentLayer.guideStep;
+      burst(-30, 25);
+      const 逆向き = (() => { return null; })();
+      setTimeout(() => {
+        burst(-30, 25);
+        __commentLayer.setGuide(false);
+        res(JSON.stringify({ 一振り目, 続けて振っても, 二振り目, 戻り: __commentLayer.guideStep }));
+      }, 260);
+    }, 260));
+  `));
+  ok('トラックパッドの横スクロールは、一振りで1ページだけ送る',
+     r34b.一振り目 === 1 && r34b.続けて振っても === 1 && r34b.二振り目 === 2 && r34b.戻り === 1,
+     JSON.stringify(r34b));
   ok('書き出したファイルにガイドが1ページ目・閉じた状態で入る',
      r34.開いた状態が残らない && r34.先頭ページに戻る && r34.ガイドが含まれる && r34.ページ数 === r33.総ページ数,
      JSON.stringify(r34));
