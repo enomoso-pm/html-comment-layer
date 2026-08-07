@@ -1,0 +1,2258 @@
+<!-- ===================================================================
+     COMMENT-LAYER v2.4.1 : START
+     HTML資料にレビューコメント機能を後付けするドロップイン・ブロック。
+     この START 〜 END までを丸ごと差し替えればバージョンアップできる。
+     資料側に必要な条件：
+       - body が普通にスクロールすること（body{overflow:hidden} を使わない）
+       - ピンの基準にしたい要素があれば data-comment-host を付ける
+         （無ければ .wrap → main → article → .container → body の順で自動選択）
+     =================================================================== -->
+
+<script id="user-master" type="application/json">[{"id":"u1","name":"レビュアー1","color":"#0084A3"}]</script>
+<script id="comment-store" type="application/json">[]</script>
+
+<style id="cl-style">
+/* --- レイヤー専用の変数（資料側の :root とは名前空間が別なので衝突しない） --- */
+:root{
+  --cl-w:360px;
+  --cl-accent:#E07A3F; --cl-primary:#0084A3; --cl-danger:#C4453B;
+  --cl-ink:#1e2b30; --cl-mid:#5b6b72; --cl-border:#e2e8f0; --cl-text:#334155;
+  --cl-panel:#ffffff; --cl-soft:#f8fafc;
+}
+
+/* --- 押し出し型レイアウト：html に padding を足すだけ。
+       本文は「ページそのもの」がスクロールし続けるので、スペース／PageDown／
+       矢印キー／Cmd+F・ホイールがすべて素の挙動のまま効く --- */
+html.cl-open{ padding-right:var(--cl-w); }
+@media (max-width:900px){ html.cl-open{ padding-right:0; } }
+
+/* --- 本文中のハイライト（HTML用 span） --- */
+span.comment-highlight{ cursor:pointer; border-radius:2px; transition:background-color .2s, box-shadow .2s; }
+span.comment-highlight:hover{ filter:brightness(.96); }
+span.comment-highlight.cl-active{ background-color:rgba(224,122,63,.38)!important; border-bottom-color:var(--cl-accent)!important; box-shadow:0 0 0 1px var(--cl-accent); }
+
+/* --- 本文中のハイライト（SVG用 tspan：背景色が使えないので文字色＋下線） --- */
+tspan.comment-highlight{ cursor:pointer; }
+tspan.comment-highlight:hover{ opacity:.75; }
+tspan.comment-highlight.cl-active{ fill:var(--cl-accent)!important; text-decoration-color:var(--cl-accent)!important; font-weight:700; }
+
+/* --- ピン --- */
+#cl-pins{ position:absolute; top:0; left:0; width:100%; height:0; pointer-events:none; z-index:50; }
+.comment-pin{ position:absolute; width:28px; height:28px; border-radius:50%; border:2px solid #fff; color:#fff;
+  display:flex; align-items:center; justify-content:center; font:700 12px/1 system-ui,sans-serif;
+  cursor:grab; box-shadow:0 2px 6px rgba(0,0,0,.3); transform:translate(-50%,-100%);
+  user-select:none; pointer-events:auto; transition:box-shadow .15s; }
+.comment-pin:hover{ transform:translate(-50%,-100%) scale(1.1); }
+.comment-pin:active{ cursor:grabbing; }
+.comment-pin.cl-active{ box-shadow:0 0 0 3px var(--cl-accent); z-index:2; }
+html.cl-pinmode [data-cl-host]{ cursor:crosshair; }
+
+/* --- 選択ツールバー（position:fixed なのでスクロール計算が一切要らない） --- */
+#cl-toolbar{ position:fixed; display:none; background:var(--cl-ink); color:#fff; padding:8px 16px;
+  border-radius:6px; font:700 13px/1.4 system-ui,"Hiragino Sans","Noto Sans JP",sans-serif; cursor:pointer;
+  box-shadow:0 4px 12px rgba(0,0,0,.18); z-index:9500; transform:translate(-50%,-125%); white-space:nowrap; }
+#cl-toolbar::after{ content:''; position:absolute; top:100%; left:50%; margin-left:-6px;
+  border:6px solid transparent; border-top-color:var(--cl-ink); }
+
+/* --- サイドバー --- */
+#cl-sidebar{ position:fixed; top:0; right:0; width:var(--cl-w); height:100vh; height:100dvh;
+  background:var(--cl-panel); border-left:1px solid var(--cl-border); display:none; flex-direction:column;
+  z-index:9000; box-shadow:-2px 0 16px rgba(0,0,0,.06);
+  font-family:system-ui,"Hiragino Sans","Noto Sans JP",Meiryo,sans-serif; font-size:15px; line-height:1.6;
+  color:var(--cl-text); text-align:left; }
+html.cl-open #cl-sidebar{ display:flex; }
+@media (max-width:900px){ #cl-sidebar{ width:100%; } }
+
+#cl-sidebar .cl-head{ padding:14px 16px; border-bottom:1px solid var(--cl-border); display:flex;
+  justify-content:space-between; align-items:center; flex:0 0 auto; }
+#cl-sidebar .cl-head h3{ margin:0; font-size:15px; color:var(--cl-text); font-weight:700; }
+#cl-sidebar .cl-head-r{ display:flex; align-items:center; gap:6px; }
+#cl-sort{ font-size:11px; padding:3px 4px; border:1px solid var(--cl-border); border-radius:4px;
+  background:#fff; color:var(--cl-mid); cursor:pointer; font-family:inherit; }
+#cl-sidebar .cl-close{ background:none; border:none; font-size:20px; line-height:1; cursor:pointer; color:var(--cl-mid); padding:2px 6px; }
+#cl-sidebar .cl-close:hover{ color:var(--cl-ink); }
+
+#cl-users{ padding:12px 16px; background:var(--cl-soft); border-bottom:1px solid var(--cl-border); flex:0 0 auto; }
+#cl-users label{ font-size:11px; font-weight:700; color:var(--cl-mid); display:flex;
+  justify-content:space-between; align-items:center; margin-bottom:4px; }
+.cl-user-combo{ display:flex; align-items:center; gap:9px; background:#fff;
+  border:1px solid var(--cl-border); border-radius:9px; padding:8px 11px;
+  transition:border-color .15s, box-shadow .15s; }
+.cl-user-combo:focus-within{ border-color:var(--cl-primary); box-shadow:0 0 0 3px rgba(0,132,163,.14); }
+.cl-user-dot{ width:11px; height:11px; border-radius:50%; flex:0 0 auto;
+  box-shadow:0 0 0 2px #fff, 0 0 0 3px rgba(0,0,0,.07); }
+#cl-user{ flex:1 1 auto; min-width:0; border:none; outline:none; background:transparent;
+  font:600 13.5px/1.4 inherit; color:var(--cl-text); padding:0; }
+#cl-user::placeholder{ color:#94a3b8; font-weight:400; }
+#cl-master{ display:none; background:#fff; border:1px solid var(--cl-border); border-radius:4px; padding:10px; margin-top:8px; }
+#cl-master.open{ display:block; }
+.cl-master-item{ display:flex; gap:6px; align-items:center; margin-bottom:6px; }
+.cl-master-item input[type=text],.cl-master-add input[type=text]{ flex:1; min-width:0; padding:4px 6px; font-size:12px;
+  border:1px solid var(--cl-border); border-radius:3px; color:var(--cl-text); background:#fff; }
+.cl-master-item input[type=color],.cl-master-add input[type=color]{ width:28px; height:26px; padding:0; border:none; cursor:pointer; border-radius:3px; background:none; flex:0 0 auto; }
+.cl-master-add{ display:flex; gap:6px; margin-top:10px; border-top:1px dashed var(--cl-border); padding-top:10px; }
+.cl-master-add button{ background:var(--cl-primary); color:#fff; border:none; border-radius:3px; padding:0 10px; cursor:pointer; font-size:11px; flex:0 0 auto; }
+
+#cl-list{ flex:1 1 auto; overflow-y:auto; overscroll-behavior:contain; padding:16px; display:flex; flex-direction:column; gap:12px; }
+.cl-empty{ color:#94a3b8; font-size:13px; text-align:center; margin-top:24px; }
+.cl-item{ background:#fff; border:1px solid var(--cl-border); border-left:4px solid #ccc; border-radius:6px;
+  padding:12px; cursor:pointer; transition:box-shadow .2s, background .2s; }
+.cl-item:hover{ box-shadow:0 4px 8px rgba(0,0,0,.06); }
+.cl-item.cl-active{ border-color:var(--cl-accent)!important; background:#fffaf5; box-shadow:0 2px 8px rgba(224,122,63,.15); }
+.cl-meta{ display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--cl-mid); margin-bottom:6px; gap:6px; }
+.cl-author{ font-weight:700; color:#fff; padding:2px 6px; border-radius:4px; font-size:11px; }
+.cl-quote{ font-size:12px; color:var(--cl-mid); border-left:2px solid var(--cl-border); padding-left:8px;
+  margin-bottom:6px; background:var(--cl-soft); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.cl-body{ font-size:13.5px; color:var(--cl-text); line-height:1.55; margin:0; white-space:pre-wrap; overflow-wrap:anywhere; }
+.cl-orphan{ font-size:11px; color:var(--cl-danger); margin-top:6px; }
+.cl-ibtn{ background:none; border:none; font-size:14px; cursor:pointer; padding:3px; border-radius:4px; opacity:.5; }
+.cl-ibtn:hover{ opacity:1; background:#f1f5f9; }
+.cl-ibtn.del:hover{ background:#fee2e2; }
+.cl-meta-l{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; min-width:0; }
+.cl-meta-r{ white-space:nowrap; flex:0 0 auto; }
+
+/* --- 優先度ラベル（クリックで must → want → nit → なし と巡回） --- */
+.cl-label{ font:700 10px/1.4 inherit; padding:2px 6px; border-radius:4px; cursor:pointer;
+  border:1px solid transparent; letter-spacing:.02em; }
+.cl-label.must{ background:#fee2e2; color:#b91c1c; }
+.cl-label.want{ background:#fef3c7; color:#92400e; }
+.cl-label.nit{ background:#eef2f7; color:#64748b; }
+.cl-label.none{ background:none; color:#aab6c0; border-color:var(--cl-border); }
+.cl-label:hover{ filter:brightness(.95); }
+
+/* --- 完了（アーカイブせず、一覧の最下部にまとめる） --- */
+.cl-item.cl-done{ background:var(--cl-soft); opacity:.68; }
+.cl-item.cl-done:hover{ opacity:1; }
+.cl-item.cl-done .cl-body{ color:var(--cl-mid); }
+.cl-done-note{ font-size:10.5px; color:#2f7d52; margin-top:6px; font-weight:700; }
+.cl-divider{ display:flex; align-items:center; gap:8px; font-size:11px; color:var(--cl-mid);
+  font-weight:700; margin-top:4px; }
+.cl-divider::before,.cl-divider::after{ content:''; flex:1 1 auto; height:1px; background:var(--cl-border); }
+
+/* --- 返信スレッド --- */
+.cl-replies{ margin-top:8px; border-top:1px dashed var(--cl-border); padding-top:8px;
+  display:flex; flex-direction:column; gap:8px; }
+.cl-reply{ padding-left:8px; border-left:2px solid var(--cl-border); }
+.cl-rmeta{ display:flex; align-items:center; gap:6px; font-size:10.5px; color:var(--cl-mid); margin-bottom:2px; }
+.cl-rtext{ font-size:12.5px; color:var(--cl-text); line-height:1.55; white-space:pre-wrap; overflow-wrap:anywhere; }
+.cl-reply-btn{ margin-top:8px; background:none; border:none; color:var(--cl-primary);
+  font-size:11.5px; font-weight:700; cursor:pointer; padding:2px 0; font-family:inherit; }
+.cl-reply-btn:hover{ text-decoration:underline; }
+.cl-rdraft textarea{ width:100%; min-height:56px; padding:7px; border:1px solid var(--cl-primary);
+  border-radius:4px; font:inherit; font-size:13px; resize:vertical; margin:8px 0 6px; outline:none;
+  color:var(--cl-text); background:#fff; }
+
+.cl-draft{ border-left-color:var(--cl-primary)!important; box-shadow:0 0 0 2px var(--cl-primary); cursor:default; }
+.cl-draft textarea{ width:100%; min-height:74px; padding:8px; border:1px solid var(--cl-primary); border-radius:4px;
+  font:inherit; font-size:13.5px; resize:vertical; margin-bottom:8px; outline:none; color:var(--cl-text); background:#fff; }
+.cl-draft-actions{ display:flex; justify-content:space-between; align-items:center; gap:8px; }
+.cl-hint{ font-size:10.5px; color:var(--cl-mid); }
+.cl-btn{ padding:6px 12px; border-radius:4px; font-size:12px; font-weight:700; cursor:pointer; border:none; }
+.cl-btn.cancel{ background:#e2e8f0; color:var(--cl-text); }
+.cl-btn.save{ background:var(--cl-primary); color:#fff; }
+
+#cl-sidebar .cl-foot{ padding:14px 16px; border-top:1px solid var(--cl-border); background:#fff; flex:0 0 auto; }
+#cl-export{ width:100%; padding:12px; background:var(--cl-ink); color:#fff; border:none; border-radius:6px;
+  font-weight:700; font-size:14px; cursor:pointer; }
+#cl-export:hover{ background:#0f172a; }
+#cl-copy{ width:100%; padding:11px; margin-bottom:8px; background:#fff; color:var(--cl-ink);
+  border:1px solid var(--cl-border); border-radius:6px; font-weight:700; font-size:13.5px; cursor:pointer; }
+#cl-copy:hover{ background:var(--cl-soft); }
+
+/* --- ドック --- */
+#cl-dock{ position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+  background:rgba(30,43,48,.88); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+  border-radius:30px; display:flex; align-items:center; padding:6px 8px; gap:4px;
+  box-shadow:0 8px 24px rgba(0,0,0,.18), inset 0 1px 2px rgba(255,255,255,.1); z-index:8900;
+  transition:left .25s cubic-bezier(.16,1,.3,1); font-family:system-ui,"Hiragino Sans","Noto Sans JP",sans-serif; }
+html.cl-open #cl-dock{ left:calc(50% - var(--cl-w) / 2); }
+@media (max-width:900px){ html.cl-open #cl-dock{ left:50%; } }
+.cl-dock-btn{ background:transparent; border:none; color:rgba(255,255,255,.9); border-radius:20px;
+  padding:8px 16px; font-size:13.5px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:8px; transition:background .2s; }
+.cl-dock-btn:hover{ background:rgba(255,255,255,.15); color:#fff; }
+.cl-dock-btn.on{ background:var(--cl-accent); color:#fff; box-shadow:0 2px 8px rgba(224,122,63,.4); }
+.cl-dock-sep{ width:1px; height:18px; background:rgba(255,255,255,.2); margin:0 4px; }
+#cl-badge{ background:var(--cl-accent); color:#fff; font-size:11px; font-weight:700; min-width:20px; height:20px;
+  border-radius:10px; display:none; align-items:center; justify-content:center; padding:0 5px; }
+
+/* --- 使い方（ドックとは独立した左下の単独ボタン） --- */
+#cl-guide-fab{ position:fixed; bottom:24px; left:24px; z-index:8900;
+  background:rgba(30,43,48,.88); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+  color:rgba(255,255,255,.9); border:none; border-radius:24px; padding:10px 16px; cursor:pointer;
+  display:flex; align-items:center; gap:8px; font:600 13.5px/1 system-ui,"Hiragino Sans","Noto Sans JP",sans-serif;
+  box-shadow:0 8px 24px rgba(0,0,0,.18), inset 0 1px 2px rgba(255,255,255,.1); transition:background .2s, color .2s; }
+#cl-guide-fab:hover{ background:rgba(255,255,255,.15); color:#fff; }
+@media (max-width:900px){ #cl-guide-fab{ bottom:16px; left:16px; padding:9px 14px; } }
+
+/* --- 保存後などに出す軽い通知（確認は求めず、数秒で自動的に消える） --- */
+#cl-toast{ position:fixed; left:50%; bottom:96px; transform:translateX(-50%) translateY(10px);
+  max-width:min(420px, calc(100vw - 32px)); background:#fff; color:var(--cl-text);
+  border:1px solid var(--cl-border); border-radius:11px; box-shadow:0 16px 40px rgba(0,0,0,.2);
+  padding:14px 16px; font-size:13.5px; line-height:1.7; z-index:9600; opacity:0; pointer-events:none;
+  transition:opacity .2s, transform .2s; cursor:pointer;
+  font-family:system-ui,"Hiragino Sans","Noto Sans JP",Meiryo,sans-serif; text-align:left; }
+#cl-toast.show{ opacity:1; transform:translateX(-50%) translateY(0); pointer-events:auto; }
+#cl-toast strong{ color:var(--cl-ink); }
+@media (max-width:900px){ #cl-toast{ bottom:80px; } }
+
+/* --- 使い方ガイド（押したときだけ出る。自動では絶対に出さない） --- */
+#cl-guide{ position:fixed; inset:0; z-index:9800; display:none; align-items:center; justify-content:center;
+  background:rgba(15,23,42,.5); -webkit-backdrop-filter:blur(3px); backdrop-filter:blur(3px); padding:20px;
+  font-family:system-ui,"Hiragino Sans","Noto Sans JP",Meiryo,sans-serif; color:var(--cl-text); text-align:left; }
+html.cl-guide-open #cl-guide{ display:flex; }
+.cl-g-panel{ background:#fff; border-radius:14px; width:min(660px,100%); max-height:min(90vh,780px);
+  display:flex; flex-direction:column; overflow:hidden; box-shadow:0 24px 60px rgba(0,0,0,.32); }
+.cl-g-head{ display:flex; justify-content:space-between; align-items:center; gap:12px;
+  padding:14px 18px; border-bottom:1px solid var(--cl-border); flex:0 0 auto; }
+.cl-g-title{ font-size:14px; font-weight:700; color:var(--cl-text); }
+.cl-g-body{ flex:1 1 auto; overflow-y:auto; overscroll-behavior:contain; padding:26px 30px 10px; }
+.cl-g-step{ display:none; }
+.cl-g-step.on{ display:block; }
+.cl-g-art{ display:block; width:100%; max-width:430px; height:auto; margin:0 auto 18px; }
+.cl-g-h{ font-size:19px; font-weight:700; color:var(--cl-ink); text-align:center; margin:0 0 10px; }
+.cl-g-lead{ font-size:14px; line-height:1.85; margin:0 0 12px; }
+.cl-g-list{ margin:0; padding-left:20px; font-size:13.5px; line-height:1.85; }
+.cl-g-list li{ margin-bottom:6px; }
+.cl-g-tip{ background:var(--cl-soft); border-left:3px solid var(--cl-primary); border-radius:0 5px 5px 0;
+  padding:10px 14px; font-size:12.5px; line-height:1.8; margin-top:14px; color:var(--cl-mid); }
+.cl-g-foot{ display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding:12px 18px; border-top:1px solid var(--cl-border); background:var(--cl-soft); flex:0 0 auto; }
+.cl-g-dots{ display:flex; gap:7px; }
+.cl-g-dot{ width:7px; height:7px; padding:0; border:none; border-radius:50%; background:#cbd5e1; cursor:pointer; transition:background .2s; }
+.cl-g-dot.on{ background:var(--cl-accent); }
+.cl-g-dot:hover{ background:#94a3b8; }
+.cl-g-nav{ display:flex; gap:8px; }
+.cl-g-btn{ padding:7px 15px; border-radius:6px; font-size:13px; font-weight:700; cursor:pointer;
+  border:1px solid var(--cl-border); background:#fff; color:var(--cl-text); font-family:inherit; }
+.cl-g-btn:hover{ background:#f1f5f9; }
+.cl-g-btn.primary{ background:var(--cl-ink); color:#fff; border-color:var(--cl-ink); }
+.cl-g-btn.primary:hover{ background:#0f172a; }
+.cl-g-btn:disabled{ opacity:.35; cursor:default; }
+.cl-g-keys{ width:100%; border-collapse:collapse; font-size:13.5px; }
+.cl-g-keys caption{ text-align:left; font-size:11px; font-weight:700; color:var(--cl-mid);
+  padding:14px 0 6px; caption-side:top; }
+.cl-g-keys td{ padding:7px 6px; border-bottom:1px solid var(--cl-border); vertical-align:top; line-height:1.7; }
+.cl-g-keys td:first-child{ white-space:nowrap; width:1%; padding-right:16px; }
+kbd.cl-k{ display:inline-block; background:#fff; border:1px solid #cbd5e1; border-bottom-width:2px;
+  border-radius:4px; padding:1px 6px; margin:1px 0;
+  font:600 12px/1.7 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:var(--cl-ink); }
+@media (max-width:600px){
+  .cl-g-body{ padding:20px 18px 8px; }
+  .cl-g-h{ font-size:17px; }
+  /* 狭い画面ではキー名の折り返しを許す。nowrap のままだと表が横にはみ出す */
+  .cl-g-keys td:first-child{ white-space:normal; width:auto; padding-right:10px; }
+}
+
+@media print{
+  html.cl-open{ padding-right:0; }
+  #cl-sidebar,#cl-dock,#cl-toolbar,#cl-pins,#cl-guide,#cl-guide-fab,#cl-toast{ display:none!important; }
+  .comment-highlight{ background:transparent!important; border:none!important; box-shadow:none!important;
+    color:inherit!important; fill:inherit!important; text-decoration:none!important; }
+}
+@media (prefers-reduced-motion:reduce){ #cl-dock,.comment-pin,.cl-item{ transition:none!important; } }
+</style>
+
+<div id="cl-toolbar">💬 コメントする</div>
+
+<aside id="cl-sidebar" aria-label="コメントスレッド">
+  <div class="cl-head">
+    <h3>コメントスレッド</h3>
+    <div class="cl-head-r">
+      <select id="cl-sort" title="並び順（完了は常に最下部）">
+        <option value="updated">更新順</option>
+        <option value="doc">文書順</option>
+      </select>
+      <button class="cl-close" data-cl="close" title="閉じる（Esc）">×</button>
+    </div>
+  </div>
+  <div id="cl-users">
+    <label for="cl-user">操作中のユーザー <button class="cl-ibtn" data-cl="master" title="ユーザー設定">⚙️</button></label>
+    <div class="cl-user-combo">
+      <span id="cl-user-dot" class="cl-user-dot" aria-hidden="true"></span>
+      <input type="text" id="cl-user" list="cl-user-options" autocomplete="off" spellcheck="false"
+        placeholder="名前を入力してEnter" title="一覧から選ぶか、新しい名前を入力してEnter／⌘+Enterで決定">
+      <datalist id="cl-user-options"></datalist>
+    </div>
+    <div id="cl-master">
+      <div style="font-size:11px;color:var(--cl-mid);margin-bottom:8px;">※色を変えると既存のピン・ハイライトにも即反映されます。</div>
+      <div id="cl-master-list"></div>
+      <div class="cl-master-add">
+        <input type="text" id="cl-new-name" placeholder="新しい名前">
+        <input type="color" id="cl-new-color" value="#0084A3">
+        <button data-cl="add-user">追加</button>
+      </div>
+    </div>
+  </div>
+  <div id="cl-list"></div>
+  <div class="cl-foot">
+    <button id="cl-copy" data-cl="copy" title="ショートカット: ⌘/Ctrl + Shift + C">📋 指摘をコピー</button>
+    <button id="cl-export" data-cl="export" title="ショートカット: ⌘/Ctrl + S">💾 資料を保存</button>
+  </div>
+</aside>
+
+<div id="cl-dock">
+  <button class="cl-dock-btn" data-cl="pinmode" title="ショートカット: C">📍 ピンを置く</button>
+  <div class="cl-dock-sep"></div>
+  <button class="cl-dock-btn" data-cl="toggle-sidebar">💬 コメント一覧 <span id="cl-badge">0</span></button>
+</div>
+
+<button id="cl-guide-fab" data-cl="guide" title="使い方を見る" aria-label="使い方を見る">📖 使い方</button>
+
+<div id="cl-toast" role="status" aria-live="polite"></div>
+
+<!-- 使い方ガイド。開くのは左下の「📖 使い方」を押したときだけで、自動表示は一切しない -->
+<div id="cl-guide" role="dialog" aria-modal="true" aria-label="使い方ガイド">
+ <div class="cl-g-panel">
+  <div class="cl-g-head">
+    <span class="cl-g-title">📖 この資料へのコメントのしかた</span>
+    <button class="cl-close" data-cl="guide-close" title="閉じる（Esc）">×</button>
+  </div>
+
+  <div class="cl-g-body">
+
+   <!-- 1. 全体像 -->
+   <div class="cl-g-step on">
+    <svg class="cl-g-art" viewBox="0 0 430 200" role="img" aria-label="資料の右側にコメント一覧が開く様子">
+      <rect x="14" y="16" width="402" height="168" rx="11" fill="#fff" stroke="#cbd5e1" stroke-width="2"/>
+      <path d="M14 44 H416" stroke="#cbd5e1" stroke-width="2"/>
+      <circle cx="32" cy="30" r="3.5" fill="#e2e8f0"/><circle cx="45" cy="30" r="3.5" fill="#e2e8f0"/><circle cx="58" cy="30" r="3.5" fill="#e2e8f0"/>
+      <rect x="36" y="60" width="150" height="9" rx="4.5" fill="#cbd5e1"/>
+      <rect x="36" y="82" width="228" height="6" rx="3" fill="#e2e8f0"/>
+      <rect x="36" y="96" width="210" height="6" rx="3" fill="#e2e8f0"/>
+      <rect x="34" y="108" width="104" height="12" rx="3" fill="#E07A3F" fill-opacity=".26"/>
+      <path d="M34 121 H138" stroke="#E07A3F" stroke-width="2"/>
+      <rect x="142" y="111" width="100" height="6" rx="3" fill="#e2e8f0"/>
+      <rect x="36" y="126" width="196" height="6" rx="3" fill="#e2e8f0"/>
+      <rect x="36" y="140" width="150" height="6" rx="3" fill="#e2e8f0"/>
+      <path d="M296 44 V184" stroke="#cbd5e1" stroke-width="2"/>
+      <rect x="296" y="44" width="120" height="140" fill="#f8fafc"/>
+      <rect x="306" y="56" width="100" height="46" rx="6" fill="#fff" stroke="#e2e8f0" stroke-width="2"/>
+      <rect x="306" y="56" width="4" height="46" rx="2" fill="#E07A3F"/>
+      <rect x="316" y="66" width="34" height="8" rx="4" fill="#0084A3"/>
+      <rect x="316" y="80" width="78" height="5" rx="2.5" fill="#e2e8f0"/>
+      <rect x="316" y="89" width="60" height="5" rx="2.5" fill="#e2e8f0"/>
+      <rect x="306" y="110" width="100" height="46" rx="6" fill="#fff" stroke="#e2e8f0" stroke-width="2"/>
+      <rect x="306" y="110" width="4" height="46" rx="2" fill="#B0483F"/>
+      <rect x="316" y="120" width="26" height="8" rx="4" fill="#B0483F"/>
+      <rect x="316" y="134" width="78" height="5" rx="2.5" fill="#e2e8f0"/>
+      <rect x="316" y="143" width="52" height="5" rx="2.5" fill="#e2e8f0"/>
+      <path d="M262 114 h26" stroke="#E07A3F" stroke-width="2" stroke-dasharray="4 4" stroke-linecap="round"/>
+      <path d="M284 109 l6 5 -6 5" fill="none" stroke="#E07A3F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="96" y="158" width="132" height="26" rx="13" fill="#1e2b30"/>
+      <rect x="106" y="167" width="42" height="8" rx="4" fill="#fff" fill-opacity=".65"/>
+      <rect x="158" y="167" width="58" height="8" rx="4" fill="#fff" fill-opacity=".65"/>
+      <text x="356" y="36" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#94a3b8">コメント一覧</text>
+    </svg>
+    <div class="cl-g-h">この資料は、そのまま書き込めます</div>
+    <p class="cl-g-lead">アプリのインストールもログインも要りません。<strong>気づいたことをその場に書き込んで、
+    最後にファイルを1つ書き出して返すだけ</strong>です。書き込んだ内容はこのHTMLファイルの中に入ります。</p>
+    <ul class="cl-g-list">
+      <li>本文の<strong>気になった箇所を選んで</strong>コメントする</li>
+      <li>図やレイアウトには<strong>ピンを刺して</strong>コメントする</li>
+      <li>右側の一覧で、コメントを読む・直す・完了にする</li>
+    </ul>
+    <div class="cl-g-tip">画面下のバー（📍ピン・💬コメント一覧）と、左下の「📖 使い方」が入口です。閉じたり消えたりしません。</div>
+   </div>
+
+   <!-- 2. 操作中のユーザー -->
+   <div class="cl-g-step">
+    <svg class="cl-g-art" viewBox="0 0 430 200" role="img" aria-label="操作中のユーザーを名前で選ぶか、新しい名前を入力してEnterで決める">
+      <rect x="14" y="16" width="402" height="168" rx="11" fill="#fff" stroke="#cbd5e1" stroke-width="2"/>
+      <text x="34" y="42" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#94a3b8">操作中のユーザー</text>
+      <rect x="34" y="50" width="180" height="34" rx="9" fill="#fff" stroke="#0084A3" stroke-width="2"/>
+      <circle cx="50" cy="67" r="6" fill="#0084A3"/>
+      <text x="64" y="71" font-family="system-ui,sans-serif" font-size="12" font-weight="700" fill="#1e2b30">レビュアー1</text>
+      <rect x="34" y="90" width="180" height="64" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5"/>
+      <circle cx="50" cy="107" r="5" fill="#0084A3"/><text x="62" y="111" font-family="system-ui,sans-serif" font-size="10" fill="#5b6b72">レビュアー1</text>
+      <circle cx="50" cy="127" r="5" fill="#E07A3F"/><text x="62" y="131" font-family="system-ui,sans-serif" font-size="10" fill="#5b6b72">デザイン</text>
+      <circle cx="50" cy="147" r="5" fill="#B0483F"/><text x="62" y="151" font-family="system-ui,sans-serif" font-size="10" fill="#5b6b72">開発</text>
+      <text x="44" y="166" font-family="system-ui,sans-serif" font-size="8" fill="#94a3b8">これまでの参加者が候補に出る</text>
+      <path d="M228 67 h20" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="4 4" stroke-linecap="round"/>
+      <path d="M244 62 l6 5 -6 5" fill="none" stroke="#cbd5e1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="262" y="46" width="140" height="40" rx="8" fill="#fff" stroke="#E07A3F" stroke-width="2"/>
+      <text x="276" y="70" font-family="system-ui,sans-serif" font-size="12" font-weight="700" fill="#1e2b30">田中</text>
+      <text x="330" y="70" font-family="system-ui,sans-serif" font-size="8" fill="#94a3b8">（新しい名前）</text>
+      <rect x="262" y="98" width="140" height="24" rx="12" fill="#1e2b30"/>
+      <text x="332" y="114" text-anchor="middle" font-family="system-ui,sans-serif" font-size="9" font-weight="700" fill="#fff">Enter / ⌘+Enter</text>
+      <path d="M332 122 v14" stroke="#4f9e72" stroke-width="2" stroke-linecap="round"/>
+      <path d="M327 132 l5 6 5 -6" fill="none" stroke="#4f9e72" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="262" y="148" width="140" height="26" rx="13" fill="#4f9e72" fill-opacity=".14"/>
+      <circle cx="280" cy="161" r="6" fill="#B0483F"/>
+      <text x="292" y="165" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#1e2b30">田中に切り替わった</text>
+    </svg>
+    <div class="cl-g-h">まず、操作中のユーザーを選ぶ</div>
+    <p class="cl-g-lead">サイドバー上部の「操作中のユーザー」欄が、<strong>これから書くコメント・返信につく名前と色</strong>です。
+    書く前に、自分の名前になっているか確かめてください。</p>
+    <ul class="cl-g-list">
+      <li>欄を押すと<strong>これまでの参加者が候補に出ます</strong>。選んで確定すれば、その人に切り替わります</li>
+      <li>候補にない名前を打ち込んで確定すると、<strong>その場で新しい参加者として追加</strong>されます（作り直しは不要）</li>
+      <li>確定は <kbd class="cl-k">Enter</kbd> または <kbd class="cl-k">⌘</kbd>／<kbd class="cl-k">Ctrl</kbd> + <kbd class="cl-k">Enter</kbd>。
+        <kbd class="cl-k">Esc</kbd> か他の場所を押すと、確定せずに元の名前へ戻ります</li>
+    </ul>
+    <div class="cl-g-tip">レビュアーの色を変えたいときは、欄の右の⚙️から。色を変えると、その人が過去に書いたハイライトにも即反映されます。</div>
+   </div>
+
+   <!-- 3. テキストにコメント -->
+   <div class="cl-g-step">
+    <svg class="cl-g-art" viewBox="0 0 430 200" role="img" aria-label="本文をドラッグ選択するとコメントボタンが出る">
+      <rect x="14" y="16" width="402" height="168" rx="11" fill="#fff" stroke="#cbd5e1" stroke-width="2"/>
+      <rect x="40" y="44" width="150" height="8" rx="4" fill="#cbd5e1"/>
+      <rect x="40" y="68" width="300" height="6" rx="3" fill="#e2e8f0"/>
+      <rect x="38" y="86" width="176" height="15" rx="3" fill="#E07A3F" fill-opacity=".3"/>
+      <rect x="218" y="90" width="120" height="6" rx="3" fill="#e2e8f0"/>
+      <rect x="40" y="110" width="268" height="6" rx="3" fill="#e2e8f0"/>
+      <g>
+        <rect x="66" y="126" width="124" height="26" rx="6" fill="#1e2b30"/>
+        <path d="M122 152 l6 9 6 -9 z" fill="#1e2b30"/>
+        <text x="128" y="143" text-anchor="middle" font-family="system-ui,sans-serif" font-size="12" font-weight="700" fill="#fff">💬 コメントする</text>
+      </g>
+      <path d="M60 82 C 90 74, 140 74, 176 82" stroke="#E07A3F" stroke-width="2" stroke-linecap="round" fill="none" stroke-dasharray="1 5"/>
+      <path d="M176 76 l0 17 4.5 -4.5 3 6.5 3 -1.5 -3 -6.5 6 0 z" fill="#fff" stroke="#5b6b72" stroke-width="1.6" stroke-linejoin="round"/>
+      <path d="M204 132 h34" stroke="#E07A3F" stroke-width="2" stroke-dasharray="4 4" stroke-linecap="round"/>
+      <path d="M234 127 l6 5 -6 5" fill="none" stroke="#E07A3F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="248" y="112" width="130" height="56" rx="7" fill="#fff" stroke="#0084A3" stroke-width="2"/>
+      <rect x="258" y="122" width="108" height="20" rx="4" fill="#f1f5f9"/>
+      <text x="264" y="136" font-family="system-ui,sans-serif" font-size="10" fill="#94a3b8">コメントを入力…</text>
+      <rect x="300" y="150" width="66" height="12" rx="6" fill="#0084A3"/>
+      <text x="333" y="159" text-anchor="middle" font-family="system-ui,sans-serif" font-size="8" font-weight="700" fill="#fff">保存</text>
+      <text x="258" y="159" font-family="system-ui,sans-serif" font-size="8" fill="#94a3b8">⌘+Enter</text>
+    </svg>
+    <div class="cl-g-h">本文を選ぶ → 💬 コメントする</div>
+    <p class="cl-g-lead">気になった<strong>文をマウスでなぞって選ぶ</strong>と、すぐ上に「💬 コメントする」が出ます。
+    押すと右側に入力欄が開くので、書いて <kbd class="cl-k">⌘</kbd>／<kbd class="cl-k">Ctrl</kbd> +
+    <kbd class="cl-k">Enter</kbd>（または「保存」）。</p>
+    <ul class="cl-g-list">
+      <li>選んだ文には色が付き、<strong>どこへの指摘か</strong>が誰にでも分かります</li>
+      <li>色の付いた箇所を<strong>クリック</strong>すると、その指摘が一覧で光ります</li>
+      <li>逆に一覧のカードをクリックすると、本文がその場所まで動きます</li>
+    </ul>
+    <div class="cl-g-tip">選び直したいときは、もう一度別の場所をなぞるだけ。間違えて保存しても ✏️ で直せます。</div>
+   </div>
+
+   <!-- 4. ピン -->
+   <div class="cl-g-step">
+    <svg class="cl-g-art" viewBox="0 0 430 200" role="img" aria-label="図の上をクリックしてピンを刺す">
+      <rect x="14" y="16" width="402" height="168" rx="11" fill="#fff" stroke="#cbd5e1" stroke-width="2"/>
+      <rect x="42" y="40" width="120" height="7" rx="3.5" fill="#cbd5e1"/>
+      <rect x="42" y="62" width="222" height="98" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2"/>
+      <rect x="66" y="112" width="26" height="34" rx="3" fill="#cbd5e1"/>
+      <rect x="102" y="92" width="26" height="54" rx="3" fill="#cbd5e1"/>
+      <rect x="138" y="76" width="26" height="70" rx="3" fill="#0084A3" fill-opacity=".55"/>
+      <rect x="174" y="100" width="26" height="46" rx="3" fill="#cbd5e1"/>
+      <text x="56" y="156" font-family="system-ui,sans-serif" font-size="10" fill="#94a3b8">図・グラフ・レイアウト</text>
+      <path d="M151 46 v14 M144 53 h14" stroke="#E07A3F" stroke-width="2" stroke-linecap="round"/>
+      <g>
+        <circle cx="151" cy="76" r="15" fill="#0084A3" stroke="#fff" stroke-width="3"/>
+        <text x="151" y="81" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" font-weight="700" fill="#fff">レ</text>
+        <path d="M151 91 l0 8" stroke="#0084A3" stroke-width="2" stroke-linecap="round"/>
+      </g>
+      <path d="M276 104 h24" stroke="#E07A3F" stroke-width="2" stroke-dasharray="4 4" stroke-linecap="round"/>
+      <path d="M296 99 l6 5 -6 5" fill="none" stroke="#E07A3F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="310" y="76" width="90" height="56" rx="7" fill="#fff" stroke="#e2e8f0" stroke-width="2"/>
+      <rect x="310" y="76" width="4" height="56" rx="2" fill="#0084A3"/>
+      <text x="322" y="94" font-family="system-ui,sans-serif" font-size="9" fill="#94a3b8">📍 画面へのピン留め</text>
+      <rect x="322" y="102" width="66" height="5" rx="2.5" fill="#e2e8f0"/>
+      <rect x="322" y="112" width="52" height="5" rx="2.5" fill="#e2e8f0"/>
+      <rect x="112" y="160" width="132" height="24" rx="12" fill="#1e2b30"/>
+      <rect x="118" y="164" width="62" height="16" rx="8" fill="#E07A3F"/>
+      <text x="149" y="176" text-anchor="middle" font-family="system-ui,sans-serif" font-size="9" font-weight="700" fill="#fff">📍 ピンを置く</text>
+      <rect x="188" y="168" width="48" height="8" rx="4" fill="#fff" fill-opacity=".5"/>
+    </svg>
+    <div class="cl-g-h">図やレイアウトには 📍 ピンを刺す</div>
+    <p class="cl-g-lead">「この図の並びが分かりにくい」「ここに余白がほしい」など、
+    <strong>文字ではなく場所そのものへの指摘</strong>はピンで示します。</p>
+    <ul class="cl-g-list">
+      <li>下のバーの「📍 ピンを置く」（または <kbd class="cl-k">C</kbd>）を押す</li>
+      <li>資料の<strong>刺したい場所をクリック</strong>すると、そこに丸いピンが立つ</li>
+      <li>コメントを書いて保存。ピンは<strong>あとからドラッグして動かせます</strong></li>
+    </ul>
+    <div class="cl-g-tip">ピンをやめたいときは、もう一度「📍 ピンを置く」を押すか <kbd class="cl-k">Esc</kbd>。</div>
+   </div>
+
+   <!-- 5. 完了 -->
+   <div class="cl-g-step">
+    <svg class="cl-g-art" viewBox="0 0 430 200" role="img" aria-label="完了にするとカードが一覧の一番下へ移る">
+      <rect x="112" y="10" width="206" height="60" rx="7" fill="#fff" stroke="#e2e8f0" stroke-width="2"/>
+      <rect x="112" y="10" width="4" height="60" rx="2" fill="#0084A3"/>
+      <rect x="126" y="22" width="40" height="10" rx="5" fill="#0084A3"/>
+      <rect x="172" y="22" width="30" height="10" rx="3" fill="#fee2e2"/>
+      <text x="187" y="30" text-anchor="middle" font-family="system-ui,sans-serif" font-size="7" font-weight="700" fill="#b91c1c">must</text>
+      <rect x="126" y="42" width="150" height="5" rx="2.5" fill="#e2e8f0"/>
+      <rect x="126" y="53" width="110" height="5" rx="2.5" fill="#e2e8f0"/>
+      <g>
+        <circle cx="290" cy="27" r="17" fill="#E07A3F" fill-opacity=".14"/>
+        <circle cx="290" cy="27" r="11" fill="#4f9e72"/>
+        <path d="M285 27 l4 4 7 -8" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+      <path d="M330 34 C 372 44, 372 108, 330 122" stroke="#4f9e72" stroke-width="2" fill="none" stroke-dasharray="5 5" stroke-linecap="round"/>
+      <path d="M338 116 l-9 7 2 -11" fill="#4f9e72"/>
+      <rect x="112" y="82" width="206" height="26" rx="6" fill="#fff" stroke="#e2e8f0" stroke-width="2"/>
+      <rect x="112" y="82" width="4" height="26" rx="2" fill="#B0483F"/>
+      <rect x="126" y="92" width="130" height="5" rx="2.5" fill="#e2e8f0"/>
+      <g>
+        <path d="M112 128 h56" stroke="#e2e8f0" stroke-width="2"/>
+        <text x="215" y="132" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#94a3b8">完了済み 1件</text>
+        <path d="M262 128 h56" stroke="#e2e8f0" stroke-width="2"/>
+      </g>
+      <g opacity=".55">
+        <rect x="112" y="142" width="206" height="48" rx="7" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2"/>
+        <rect x="112" y="142" width="4" height="48" rx="2" fill="#0084A3"/>
+        <rect x="126" y="152" width="40" height="10" rx="5" fill="#0084A3"/>
+        <rect x="126" y="170" width="120" height="5" rx="2.5" fill="#e2e8f0"/>
+        <text x="126" y="187" font-family="system-ui,sans-serif" font-size="8" font-weight="700" fill="#4f9e72">✅ 完了（レビュアー1）</text>
+        <circle cx="290" cy="159" r="11" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+        <text x="290" y="163" text-anchor="middle" font-size="10">🔄</text>
+      </g>
+    </svg>
+    <div class="cl-g-h">片付いた指摘は ✅ で完了にする</div>
+    <p class="cl-g-lead">直した指摘、もう見なくていい指摘はカードの <strong>✅</strong> を押します。
+    <strong>消えるわけではありません。</strong>一覧の一番下、「完了済み」の区切り線の下へ移動するだけです。</p>
+    <ul class="cl-g-list">
+      <li>誰がいつ完了にしたかが、カードに残ります</li>
+      <li>やっぱり戻したいときは <strong>🔄</strong> でいつでも元の位置へ</li>
+      <li>完了にしても<strong>並び順（最後に書いた時刻）は変わりません</strong></li>
+    </ul>
+    <div class="cl-g-tip">完了は「消す」ではなく「片付ける」。何を直したかの記録がそのまま残るので、
+    次の版で同じ指摘が出戻りません。</div>
+   </div>
+
+   <!-- 6. 返信とラベル -->
+   <div class="cl-g-step">
+    <svg class="cl-g-art" viewBox="0 0 430 200" role="img" aria-label="コメントに返信を積み、優先度ラベルを付ける">
+      <rect x="76" y="14" width="278" height="172" rx="9" fill="#fff" stroke="#e2e8f0" stroke-width="2"/>
+      <rect x="76" y="14" width="5" height="172" rx="2.5" fill="#0084A3"/>
+      <rect x="94" y="30" width="46" height="13" rx="6.5" fill="#0084A3"/>
+      <text x="117" y="40" text-anchor="middle" font-family="system-ui,sans-serif" font-size="8" font-weight="700" fill="#fff">レビュアー1</text>
+      <g>
+        <rect x="148" y="30" width="34" height="13" rx="4" fill="#fee2e2"/>
+        <text x="165" y="40" text-anchor="middle" font-family="system-ui,sans-serif" font-size="8" font-weight="700" fill="#b91c1c">must</text>
+        <path d="M165 24 v-8" stroke="#E07A3F" stroke-width="1.6" stroke-linecap="round"/>
+        <circle cx="165" cy="14" r="2.5" fill="#E07A3F"/>
+      </g>
+      <text x="192" y="40" font-family="system-ui,sans-serif" font-size="8" fill="#94a3b8">8月8日 10:20</text>
+      <rect x="94" y="52" width="150" height="16" rx="3" fill="#f8fafc"/>
+      <path d="M94 52 v16" stroke="#cbd5e1" stroke-width="2"/>
+      <text x="102" y="64" font-family="system-ui,sans-serif" font-size="8" fill="#94a3b8">投資回収期間は四年程度…</text>
+      <rect x="94" y="76" width="228" height="5" rx="2.5" fill="#e2e8f0"/>
+      <rect x="94" y="87" width="192" height="5" rx="2.5" fill="#e2e8f0"/>
+      <path d="M94 106 H322" stroke="#e2e8f0" stroke-width="1.5" stroke-dasharray="4 4"/>
+      <g>
+        <path d="M104 118 v40" stroke="#cbd5e1" stroke-width="2"/>
+        <rect x="114" y="116" width="30" height="11" rx="5.5" fill="#B0483F"/>
+        <text x="129" y="125" text-anchor="middle" font-family="system-ui,sans-serif" font-size="7" font-weight="700" fill="#fff">田中</text>
+        <text x="150" y="125" font-family="system-ui,sans-serif" font-size="8" fill="#94a3b8">8月8日 14:05</text>
+        <rect x="114" y="134" width="188" height="5" rx="2.5" fill="#e2e8f0"/>
+        <rect x="114" y="145" width="140" height="5" rx="2.5" fill="#e2e8f0"/>
+      </g>
+      <text x="94" y="176" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#0084A3">💬 返信</text>
+      <path d="M146 172 h20" stroke="#0084A3" stroke-width="1.6" stroke-dasharray="3 3" stroke-linecap="round"/>
+      <path d="M162 168 l5 4 -5 4" fill="none" stroke="#0084A3" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="176" y="176" font-family="system-ui,sans-serif" font-size="9" fill="#94a3b8">やりとりを積める</text>
+    </svg>
+    <div class="cl-g-h">返信でやりとり、ラベルで優先度</div>
+    <p class="cl-g-lead">1つの指摘に対して「直しました」「まだ調整中です」を<strong>同じカードに積んでいけます</strong>。
+    上書きしないので、経緯がそのまま残ります。</p>
+    <ul class="cl-g-list">
+      <li><strong>💬 返信</strong> … カードの下から返信を追加。返信が付くとそのカードが一覧の上に上がります</li>
+      <li><strong>ラベル</strong> … 名前の横のチップをクリックするたびに
+        <strong style="color:#b91c1c">must</strong>（必ず直す）→
+        <strong style="color:#92400e">want</strong>（できれば）→
+        <strong style="color:#64748b">nit</strong>（細かい好み）→ なし と切り替わります</li>
+    </ul>
+    <div class="cl-g-tip">ラベルは「指摘をコピー」の出力にも入るので、AIに直させるときに優先順位が伝わります。</div>
+   </div>
+
+   <!-- 7. 並び替えとキーボード -->
+   <div class="cl-g-step">
+    <svg class="cl-g-art" viewBox="0 0 430 200" role="img" aria-label="更新順と文書順の切り替え、JとKでの移動">
+      <text x="86" y="22" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#1e2b30">更新順</text>
+      <text x="230" y="22" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#1e2b30">文書順</text>
+      <g>
+        <rect x="26" y="32" width="120" height="30" rx="6" fill="#fff" stroke="#e2e8f0" stroke-width="2"/>
+        <rect x="26" y="32" width="4" height="30" rx="2" fill="#B0483F"/>
+        <text x="42" y="51" font-family="system-ui,sans-serif" font-size="10" fill="#5b6b72">さっき直した指摘</text>
+        <rect x="26" y="68" width="120" height="30" rx="6" fill="#fff" stroke="#e2e8f0" stroke-width="2"/>
+        <rect x="26" y="68" width="4" height="30" rx="2" fill="#0084A3"/>
+        <text x="42" y="87" font-family="system-ui,sans-serif" font-size="10" fill="#5b6b72">返信が来た指摘</text>
+        <rect x="26" y="104" width="120" height="30" rx="6" fill="#fff" stroke="#e2e8f0" stroke-width="2"/>
+        <rect x="26" y="104" width="4" height="30" rx="2" fill="#0084A3"/>
+        <text x="42" y="123" font-family="system-ui,sans-serif" font-size="10" fill="#5b6b72">古い指摘</text>
+      </g>
+      <g>
+        <rect x="160" y="72" width="30" height="22" rx="5" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5"/>
+        <path d="M169 80 l6 6 6 -6" fill="none" stroke="#5b6b72" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M155 60 C 176 52, 176 52, 196 60" stroke="#E07A3F" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <path d="M190 55 l7 4 -7 5" fill="#E07A3F"/>
+      </g>
+      <g>
+        <rect x="204" y="32" width="120" height="30" rx="6" fill="#fff" stroke="#e2e8f0" stroke-width="2"/>
+        <rect x="204" y="32" width="4" height="30" rx="2" fill="#0084A3"/>
+        <text x="220" y="51" font-family="system-ui,sans-serif" font-size="10" fill="#5b6b72">1ページ目の指摘</text>
+        <rect x="204" y="68" width="120" height="30" rx="6" fill="#fff" stroke="#e2e8f0" stroke-width="2"/>
+        <rect x="204" y="68" width="4" height="30" rx="2" fill="#B0483F"/>
+        <text x="220" y="87" font-family="system-ui,sans-serif" font-size="10" fill="#5b6b72">中ほどの指摘</text>
+        <rect x="204" y="104" width="120" height="30" rx="6" fill="#fff" stroke="#e2e8f0" stroke-width="2"/>
+        <rect x="204" y="104" width="4" height="30" rx="2" fill="#0084A3"/>
+        <text x="220" y="123" font-family="system-ui,sans-serif" font-size="10" fill="#5b6b72">終わりの指摘</text>
+      </g>
+      <g>
+        <rect x="346" y="46" width="34" height="34" rx="7" fill="#fff" stroke="#cbd5e1" stroke-width="2" stroke-linejoin="round"/>
+        <text x="363" y="69" text-anchor="middle" font-family="ui-monospace,monospace" font-size="16" font-weight="700" fill="#1e2b30">K</text>
+        <path d="M394 76 v-26 M388 56 l6 -6 6 6" stroke="#0084A3" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="346" y="92" width="34" height="34" rx="7" fill="#fff" stroke="#cbd5e1" stroke-width="2" stroke-linejoin="round"/>
+        <text x="363" y="115" text-anchor="middle" font-family="ui-monospace,monospace" font-size="16" font-weight="700" fill="#1e2b30">J</text>
+        <path d="M394 96 v26 M388 116 l6 6 6 -6" stroke="#0084A3" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+      <g>
+        <path d="M26 150 H404" stroke="#e2e8f0" stroke-width="1.5" stroke-dasharray="4 4"/>
+        <text x="26" y="172" font-family="system-ui,sans-serif" font-size="10" fill="#94a3b8">完了した指摘は、どちらの並びでも いちばん下</text>
+        <rect x="330" y="162" width="74" height="14" rx="7" fill="#f1f5f9"/>
+        <text x="367" y="172" text-anchor="middle" font-family="system-ui,sans-serif" font-size="9" font-weight="700" fill="#94a3b8">完了済み</text>
+      </g>
+    </svg>
+    <div class="cl-g-h">並び順を変える／キーで見て回る</div>
+    <p class="cl-g-lead">一覧の右上のセレクタで、コメントの並びを切り替えられます。</p>
+    <ul class="cl-g-list">
+      <li><strong>更新順</strong>（初期設定）… 最後に書いた・返信したものが上。<strong>いま動いている話</strong>を追うとき</li>
+      <li><strong>文書順</strong> … 資料の上から順。<strong>頭から通して読む</strong>とき</li>
+      <li>並び順を変えても資料は変わりません。あなたの画面での見え方だけが変わります</li>
+    </ul>
+    <p class="cl-g-lead"><kbd class="cl-k">J</kbd> で次のコメント、<kbd class="cl-k">K</kbd> で前のコメントへ。
+    本文も一緒に動くので、<strong>マウスを使わずに端から確認</strong>できます。
+    <kbd class="cl-k">Shift</kbd> を一緒に押すと、完了したものを飛ばします。</p>
+   </div>
+
+   <!-- 8. 保存して共有 -->
+   <div class="cl-g-step">
+    <svg class="cl-g-art" viewBox="0 0 430 200" role="img" aria-label="資料を保存し、保存されたファイルそのものを相手に共有する">
+      <rect x="16" y="52" width="104" height="96" rx="8" fill="#fff" stroke="#e2e8f0" stroke-width="2"/>
+      <rect x="16" y="52" width="4" height="96" rx="2" fill="#0084A3"/>
+      <rect x="30" y="64" width="34" height="9" rx="4.5" fill="#0084A3"/>
+      <rect x="30" y="80" width="76" height="5" rx="2.5" fill="#e2e8f0"/>
+      <rect x="30" y="90" width="60" height="5" rx="2.5" fill="#e2e8f0"/>
+      <path d="M30 106 H106" stroke="#f1f5f9" stroke-width="1.5"/>
+      <rect x="30" y="114" width="30" height="9" rx="4.5" fill="#B0483F"/>
+      <rect x="30" y="130" width="66" height="5" rx="2.5" fill="#e2e8f0"/>
+      <text x="68" y="42" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#94a3b8">書いたコメント</text>
+      <path d="M126 84 C 148 84, 148 52, 168 52" stroke="#cbd5e1" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <path d="M126 116 C 148 116, 148 148, 168 148" stroke="#cbd5e1" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <g>
+        <rect x="172" y="38" width="108" height="28" rx="6" fill="#1e2b30"/>
+        <text x="226" y="56" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#fff">💾 資料を保存</text>
+        <text x="226" y="76" text-anchor="middle" font-family="ui-monospace,monospace" font-size="8" fill="#94a3b8">⌘/Ctrl + S</text>
+        <path d="M288 52 h22" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="4 4" stroke-linecap="round"/>
+        <path d="M306 47 l6 5 -6 5" fill="none" stroke="#cbd5e1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M322 30 h34 l14 14 v42 h-48 z" fill="#fff" stroke="#0084A3" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M356 30 v14 h14" fill="none" stroke="#0084A3" stroke-width="2" stroke-linejoin="round"/>
+        <text x="346" y="72" text-anchor="middle" font-family="system-ui,sans-serif" font-size="9" font-weight="700" fill="#0084A3">HTML</text>
+        <text x="346" y="100" text-anchor="middle" font-family="system-ui,sans-serif" font-size="9" fill="#94a3b8">このファイルを相手に送る</text>
+      </g>
+      <g>
+        <rect x="172" y="134" width="108" height="28" rx="6" fill="#fff" stroke="#cbd5e1" stroke-width="2"/>
+        <text x="226" y="152" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#1e2b30">📋 指摘をコピー</text>
+        <text x="226" y="172" text-anchor="middle" font-family="ui-monospace,monospace" font-size="8" fill="#94a3b8">⌘/Ctrl + Shift + C</text>
+        <path d="M288 148 h22" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="4 4" stroke-linecap="round"/>
+        <path d="M306 143 l6 5 -6 5" fill="none" stroke="#cbd5e1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="322" y="120" width="48" height="44" rx="8" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="2"/>
+        <circle cx="336" cy="138" r="3.5" fill="#1e2b30"/><circle cx="356" cy="138" r="3.5" fill="#1e2b30"/>
+        <path d="M334 150 q12 8 24 0" stroke="#1e2b30" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <path d="M346 120 v-8" stroke="#cbd5e1" stroke-width="2" stroke-linecap="round"/><circle cx="346" cy="110" r="3" fill="#E07A3F"/>
+        <text x="346" y="180" text-anchor="middle" font-family="system-ui,sans-serif" font-size="9" fill="#94a3b8">AIに直させる</text>
+      </g>
+    </svg>
+    <div class="cl-g-h">最後に、保存して相手に送る</div>
+    <p class="cl-g-lead"><strong style="color:#C4453B">書いただけでは、相手には伝わりません。</strong>
+    「保存」を押すと、コメントごと入ったHTMLがあなたのパソコンにダウンロードされます。
+    <strong>保存されるのはあなたのパソコンの中だけ</strong>なので、そのままでは相手には届きません。
+    <strong>いま保存されたそのファイルを、Slackやメールでそのまま送ってください。</strong></p>
+    <ul class="cl-g-list">
+      <li><strong>💾 資料を保存</strong>（<kbd class="cl-k">⌘</kbd>／<kbd class="cl-k">Ctrl</kbd> + <kbd class="cl-k">S</kbd>）
+        … 保存が終わると、画面下に「このファイルを送ってください」という案内が出ます。見逃したときのための念押しです</li>
+      <li><strong>📋 指摘をコピー</strong>（<kbd class="cl-k">⌘</kbd>／<kbd class="cl-k">Ctrl</kbd> + <kbd class="cl-k">Shift</kbd> + <kbd class="cl-k">C</kbd>）
+        … 全コメントを文章に整えてコピーします。AIに貼って「反映して」と頼めば、そのまま直させられます。
+        <strong>完了した指摘は「対応済み・修正不要」と明記される</strong>ので、直した箇所を蒸し返しません</li>
+    </ul>
+    <div class="cl-g-tip">保存する前にタブを閉じてしまっても大丈夫。同じファイルを開き直すと、
+    「前回の未保存コメントを復元しますか？」と聞いてくれます。</div>
+   </div>
+
+   <!-- 9. ショートカット -->
+   <div class="cl-g-step">
+    <svg class="cl-g-art" viewBox="0 0 430 170" role="img" aria-label="キーボードショートカット">
+      <rect x="30" y="14" width="370" height="146" rx="12" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
+      <g fill="#fff" stroke="#cbd5e1" stroke-width="2" stroke-linejoin="round">
+        <rect x="50" y="30" width="44" height="30" rx="6"/>
+        <rect x="104" y="30" width="44" height="30" rx="6"/>
+        <rect x="158" y="30" width="44" height="30" rx="6"/>
+        <rect x="212" y="30" width="60" height="30" rx="6"/>
+        <rect x="282" y="30" width="98" height="30" rx="6"/>
+      </g>
+      <g font-family="ui-monospace,SFMono-Regular,monospace" font-size="14" font-weight="700" fill="#1e2b30" text-anchor="middle">
+        <text x="72" y="50">C</text><text x="126" y="50">J</text><text x="180" y="50">K</text>
+        <text x="242" y="50" font-size="12">Esc</text><text x="331" y="50" font-size="12">⌘ + Enter</text>
+      </g>
+      <g font-family="system-ui,sans-serif" font-size="9" fill="#94a3b8" text-anchor="middle">
+        <text x="72" y="78">ピン</text><text x="126" y="78">次へ</text><text x="180" y="78">前へ</text>
+        <text x="242" y="78">やめる</text><text x="331" y="78">保存</text>
+      </g>
+      <g fill="#fff" stroke="#0084A3" stroke-width="2" stroke-linejoin="round">
+        <rect x="70" y="98" width="80" height="30" rx="6"/>
+        <rect x="192" y="98" width="140" height="30" rx="6"/>
+      </g>
+      <g font-family="ui-monospace,SFMono-Regular,monospace" font-size="12" font-weight="700" fill="#0084A3" text-anchor="middle">
+        <text x="110" y="118">⌘ + S</text><text x="262" y="118">⌘ + Shift + C</text>
+      </g>
+      <g font-family="system-ui,sans-serif" font-size="9" fill="#94a3b8" text-anchor="middle">
+        <text x="110" y="146">資料を保存</text><text x="262" y="146">指摘をコピー</text>
+      </g>
+    </svg>
+    <div class="cl-g-h">ショートカット一覧</div>
+    <table class="cl-g-keys">
+      <caption>キーボード</caption>
+      <tr><td><kbd class="cl-k">C</kbd></td><td>ピンモードの切り替え（押してから資料上をクリックでピンが立つ）</td></tr>
+      <tr><td><kbd class="cl-k">J</kbd> / <kbd class="cl-k">K</kbd></td><td>次 / 前のコメントへ移動（一覧の並び順どおり。本文も追従）</td></tr>
+      <tr><td><kbd class="cl-k">Shift</kbd> + <kbd class="cl-k">J</kbd> / <kbd class="cl-k">K</kbd></td><td>完了した指摘を飛ばして、次 / 前へ</td></tr>
+      <tr><td><kbd class="cl-k">⌘</kbd> / <kbd class="cl-k">Ctrl</kbd> + <kbd class="cl-k">Enter</kbd></td><td>入力中のコメント・返信を保存（操作中のユーザー欄では、名前の確定にも使えます）</td></tr>
+      <tr><td><kbd class="cl-k">⌘</kbd> / <kbd class="cl-k">Ctrl</kbd> + <kbd class="cl-k">S</kbd></td><td>💾 資料を保存（確認なしで即保存。保存後に共有を促す通知が出ます）</td></tr>
+      <tr><td><kbd class="cl-k">⌘</kbd> / <kbd class="cl-k">Ctrl</kbd> + <kbd class="cl-k">Shift</kbd> + <kbd class="cl-k">C</kbd></td><td>📋 指摘をコピー</td></tr>
+      <tr><td><kbd class="cl-k">Esc</kbd></td><td>入力の取り消し → ピンモード解除 → 一覧を閉じる（押すたびに1段ずつ戻る）</td></tr>
+      <tr><td><kbd class="cl-k">←</kbd> / <kbd class="cl-k">→</kbd></td><td>このガイドのページ送り</td></tr>
+    </table>
+    <table class="cl-g-keys">
+      <caption>マウス</caption>
+      <tr><td>本文をドラッグ選択</td><td>「💬 コメントする」が出る</td></tr>
+      <tr><td>色の付いた箇所 / ピンをクリック</td><td>一覧の該当コメントへ（本文は動きません）</td></tr>
+      <tr><td>一覧のカードをクリック</td><td>本文のその場所までスクロール</td></tr>
+      <tr><td>ピンをドラッグ</td><td>ピンの位置を動かす</td></tr>
+      <tr><td>カードの ✅ / 🔄 / ✏️ / 🗑️</td><td>完了 / 完了の取り消し / 編集 / 削除</td></tr>
+      <tr><td>名前の横のチップ</td><td>ラベルを must → want → nit → なし と切り替え</td></tr>
+    </table>
+    <div class="cl-g-tip">このガイドは、画面左下の「📖 使い方」からいつでも開けます（下のバーとは別の、独立したボタンです）。</div>
+   </div>
+
+  </div>
+
+  <div class="cl-g-foot">
+    <div class="cl-g-dots">
+      <button class="cl-g-dot on" data-cl="guide-dot" data-i="0" title="1"></button>
+      <button class="cl-g-dot" data-cl="guide-dot" data-i="1" title="2"></button>
+      <button class="cl-g-dot" data-cl="guide-dot" data-i="2" title="3"></button>
+      <button class="cl-g-dot" data-cl="guide-dot" data-i="3" title="4"></button>
+      <button class="cl-g-dot" data-cl="guide-dot" data-i="4" title="5"></button>
+      <button class="cl-g-dot" data-cl="guide-dot" data-i="5" title="6"></button>
+      <button class="cl-g-dot" data-cl="guide-dot" data-i="6" title="7"></button>
+      <button class="cl-g-dot" data-cl="guide-dot" data-i="7" title="8"></button>
+      <button class="cl-g-dot" data-cl="guide-dot" data-i="8" title="9"></button>
+    </div>
+    <div class="cl-g-nav">
+      <button class="cl-g-btn" id="cl-g-prev" data-cl="guide-prev" disabled>← 戻る</button>
+      <button class="cl-g-btn primary" id="cl-g-next" data-cl="guide-next">次へ →</button>
+    </div>
+  </div>
+ </div>
+</div>
+
+<script id="cl-script">
+(function () {
+  'use strict';
+  if (window.__commentLayer) return;
+  var VERSION = '2.4.1';
+
+  var comments = [], users = [], pinMode = false, draft = null, dirty = false, activeId = null, booted = false;
+  var activeUserId = null, toastTimer = null;
+  // 新規ユーザーに割り当てる色。既存の色とかぶらない先頭から使い、尽きたらランダムに逃がす
+  var USER_PALETTE = ['#0084A3', '#E07A3F', '#B0483F', '#4F9E72', '#7C5CBF', '#C9973B', '#3F7FE0', '#C4453B'];
+  var host = null, pinBox = null, savedRange = null;
+  var SMOOTH = matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+  var LABELS = ['must', 'want', 'nit'];
+  // 並び順は資料の中身ではなく「読み手の都合」なので、ファイルには焼かず localStorage に持つ
+  var sortMode = 'updated';
+
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var root = document.documentElement;
+
+  /* ---------- 起動 ---------- */
+  function boot() {
+    if (booted) return; booted = true;
+
+    users = readJSON('user-master', [{ id: 'u1', name: 'レビュアー1', color: '#0084A3' }]);
+    if (!users.length) users = [{ id: 'u1', name: 'レビュアー1', color: '#0084A3' }];
+    comments = readJSON('comment-store', []);
+    comments.forEach(normalize);
+
+    try {
+      var sm = localStorage.getItem('cl-sort');
+      if (sm === 'doc' || sm === 'updated') sortMode = sm;
+    } catch (e) {}
+    var ss = $('#cl-sort');
+    if (ss) {
+      ss.value = sortMode;
+      ss.onchange = function (e) {
+        sortMode = e.target.value === 'doc' ? 'doc' : 'updated';
+        try { localStorage.setItem('cl-sort', sortMode); } catch (er) {}
+        render();
+      };
+    }
+
+    // ピンの基準要素。無い資料でも body にフォールバックするので構造の書き換えが要らない
+    host = document.querySelector('[data-comment-host]');
+    if (!host) {
+      var sels = ['.wrap', 'main', 'article', '.container', '.content'];
+      for (var i = 0; i < sels.length && !host; i++) {
+        var el = document.querySelector(sels[i]);
+        if (!el || el.closest('#cl-sidebar')) continue;
+        // 資料全体を覆っていない要素（広告枠など、たまたま名前が一致しただけの小さなdiv）は
+        // 基準にしない。ここを外すとピンが本文と無関係な位置に貼りつく
+        if (el.getBoundingClientRect().height >= root.scrollHeight * 0.5) host = el;
+      }
+    }
+    if (!host) host = document.body;
+    host.setAttribute('data-cl-host', '');
+    if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+
+    pinBox = document.createElement('div');
+    pinBox.id = 'cl-pins';
+    host.appendChild(pinBox);
+
+    renderUsers();
+    initUserCombo();
+    updateBadge();
+    reanchorOrphans();            // 版をまたいだ資料でも、特定できる指摘はハイライトを貼り直す
+    render();
+    offerRestore();               // 未保存コメントの退避があれば、ここで復元を提案する
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+
+  function readJSON(id, fallback) {
+    var n = document.getElementById(id);
+    if (!n || !n.textContent.trim()) return fallback;
+    try { var v = JSON.parse(n.textContent); return Array.isArray(v) ? v : fallback; }
+    catch (e) { console.warn('[comment-layer] ' + id + ' の読み込みに失敗:', e); return fallback; }
+  }
+
+  /* ---------- ユーティリティ ---------- */
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>'"]/g, function (t) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[t];
+    });
+  }
+  function safeColor(c) { return /^#[0-9a-fA-F]{3,8}$/.test(String(c || '')) ? c : '#5b6b72'; }
+  function currentUser() {
+    var u = users.filter(function (x) { return x.id === activeUserId; })[0];
+    return u || users[0];
+  }
+  function nodesFor(id) {
+    return Array.prototype.slice.call(document.querySelectorAll('.comment-highlight[data-id="' + id + '"], .comment-pin[data-id="' + id + '"]'));
+  }
+  function byId(id) { return comments.filter(function (x) { return x.id === id; })[0] || null; }
+  // 旧版（v2.2以前）のデータには resolved / updatedAt が無い。読み込み時に補っておくと、
+  // 並び替えの基準が揃い、書き出したJSONを読むAIから見ても「完了という状態が存在する」ことが
+  // 常に分かる（resolved:false を省略しない）。データの意味は変えていないので未保存フラグは立てない
+  function normalize(c) {
+    if (!c) return c;
+    if (typeof c.resolved !== 'boolean') c.resolved = false;
+    if (!c.updatedAt) c.updatedAt = c.date;
+    return c;
+  }
+  function isDone(c) { return !!(c && c.resolved); }
+  function repliesOf(c) { return Array.isArray(c && c.replies) ? c.replies : []; }
+  // 並び替えの基準時刻。旧形式（updatedAt なし）は date にフォールバックする
+  function stamp(c) { return c.updatedAt || c.date || ''; }
+  function labelOf(c) { return LABELS.indexOf(c && c.label) >= 0 ? c.label : ''; }
+  function nowISO() { return new Date().toISOString(); }
+
+  function fmtShort(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    try { return d.toLocaleString('ja-JP', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); }
+    catch (e) { return ''; }
+  }
+  function fmtFull(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    var p = function (n) { return String(n).padStart(2, '0'); };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+
+  /* ==========================================
+     表示順
+     完了は削除もアーカイブもせず、常に最下部にまとめる。
+     未完了・完了それぞれの中では「更新順（最終更新が新しいものが上）」が既定で、
+     資料を上から通して読むときのために「文書順」へ切り替えられる。
+     文書順の位置は本文中のハイライト／ピンの実際の縦位置で測る。ハイライトを
+     失ったコメントは位置が決められないので末尾に送る。
+     ========================================== */
+  function docPos(c) {
+    if (c.type === 'pin') {
+      var hr = host.getBoundingClientRect();
+      return hr.top + window.scrollY + (parseFloat(c.y) || 0);
+    }
+    var el = document.querySelector('.comment-highlight[data-id="' + c.id + '"]');
+    if (!el) return Infinity;
+    var r = el.getBoundingClientRect();
+    if (!r.height && !r.width) return Infinity;
+    return r.top + window.scrollY;
+  }
+
+  function orderedComments() {
+    var pos = null;
+    if (sortMode === 'doc') {
+      pos = {};
+      comments.forEach(function (c) { pos[c.id] = docPos(c); });
+    }
+    return comments.slice().sort(function (a, b) {
+      var da = isDone(a) ? 1 : 0, db = isDone(b) ? 1 : 0;
+      if (da !== db) return da - db;
+      if (pos) {
+        // Infinity 同士の引き算は NaN になるので、等値のときは並びを崩さず 0 を返す
+        if (pos[a.id] === pos[b.id]) return 0;
+        return pos[a.id] - pos[b.id];
+      }
+      var sa = stamp(a), sb = stamp(b);
+      if (sa === sb) return 0;
+      return sa < sb ? 1 : -1;
+    });
+  }
+
+  /* ==========================================
+     変更の単一入口
+     追加・編集・削除・ピン移動・復元・ユーザー変更は、必ずここを通る。
+     配列の更新、再描画、未保存フラグ、バッジ、自動退避までまとめて行うので、
+     将来リアルタイム同期版を作るときは、受信した変更をこの関数に流すだけでよい。
+     ========================================== */
+  function commit(action) {
+    switch (action.type) {
+      case 'add':
+        comments.push(action.comment);
+        activeId = action.comment.id;
+        break;
+      // date（作成）は動かさず updatedAt（最終更新）だけを進める。
+      // 並び順の基準はこの updatedAt で、Cmd/Ctrl+Enter などの明示的な保存でしか動かない。
+      // 完了・ラベル・ピン移動・レビュアー名変更では更新しない（勝手に順番が変わらないように）
+      case 'edit': {
+        var ec = byId(action.id);
+        if (!ec) return;
+        ec.text = action.text;
+        ec.updatedAt = nowISO();
+        if (!ec.date) ec.date = ec.updatedAt;
+        break;
+      }
+      case 'resolve': {
+        var rc = byId(action.id);
+        if (!rc) return;
+        rc.resolved = true;
+        rc.resolvedAt = nowISO();
+        rc.resolvedBy = action.by || '';
+        activeId = rc.id;
+        break;
+      }
+      case 'unresolve': {
+        var uc = byId(action.id);
+        if (!uc) return;
+        uc.resolved = false;
+        delete uc.resolvedAt;
+        delete uc.resolvedBy;
+        activeId = uc.id;
+        break;
+      }
+      case 'label': {
+        var lc = byId(action.id);
+        if (!lc) return;
+        if (LABELS.indexOf(action.label) >= 0) lc.label = action.label;
+        else delete lc.label;
+        break;
+      }
+      // 返信は「そのスレッドが動いた」ことなので、親の updatedAt を進める。
+      // 返信の削除は保存操作ではないので進めない
+      case 'reply-add': {
+        var ra = byId(action.id);
+        if (!ra) return;
+        if (!Array.isArray(ra.replies)) ra.replies = [];
+        ra.replies.push(action.reply);
+        ra.updatedAt = action.reply.date || nowISO();
+        activeId = ra.id;
+        break;
+      }
+      case 'reply-edit': {
+        var re = byId(action.id);
+        if (!re) return;
+        var rt = repliesOf(re).filter(function (x) { return x.id === action.replyId; })[0];
+        if (!rt) return;
+        rt.text = action.text;
+        rt.updatedAt = nowISO();
+        re.updatedAt = rt.updatedAt;
+        activeId = re.id;
+        break;
+      }
+      case 'reply-delete': {
+        var rd = byId(action.id);
+        if (!rd) return;
+        rd.replies = repliesOf(rd).filter(function (x) { return x.id !== action.replyId; });
+        break;
+      }
+      case 'delete': {
+        var di = comments.findIndex(function (x) { return x.id === action.id; });
+        if (di < 0) return;
+        comments.splice(di, 1);
+        unwrap(document.querySelectorAll('.comment-highlight[data-id="' + action.id + '"]'));
+        if (activeId === action.id) activeId = null;
+        break;
+      }
+      case 'pin-move': {
+        var pm = comments.filter(function (x) { return x.id === action.id; })[0];
+        if (!pm) return;
+        pm.x = action.x;
+        pm.y = action.y;
+        break;
+      }
+      case 'restore':
+        (action.users || []).forEach(function (u) {
+          if (!users.some(function (x) { return x.id === u.id; })) users.push(u);
+        });
+        action.comments.forEach(function (rc) { comments.push(normalize(rc)); });
+        break;
+      case 'user-add':
+        users.push(action.user);
+        break;
+      case 'user-update': {
+        var uu = users.filter(function (x) { return x.id === action.id; })[0];
+        if (!uu) return;
+        var oldName = uu.name, oldColor = uu.color;
+        uu[action.field] = action.value;
+        // 名前・色は各コメントに複製して持たせている（誰が書いたかを資料単体で読めるようにするため）ので、
+        // マスタを変えたら書いた側もすべて追従させる。返信も同じ扱い＝ここを漏らすと
+        // スレッドの中だけ旧名が残る
+        comments.forEach(function (cm) {
+          if (applyUserRename(cm, oldName, oldColor, action.field, action.value) && action.field === 'color') {
+            paintHighlight(cm.id, action.value);
+          }
+          repliesOf(cm).forEach(function (rp) {
+            applyUserRename(rp, oldName, oldColor, action.field, action.value);
+          });
+        });
+        break;
+      }
+      case 'user-delete':
+        users = users.filter(function (x) { return x.id !== action.id; });
+        break;
+      default:
+        return;
+    }
+    dirty = true;
+    saveBackup();
+    updateBadge();
+    if (action.type === 'restore' || action.type.indexOf('user-') === 0) renderUsers();
+    // ピンはドラッグ中に直接DOMを動かしている。確定時に再描画すると、直後の click が
+    // 作り直された要素に落ちてフォーカスが暴発するので、pin-move だけは再描画しない
+    if (action.type !== 'pin-move') render();
+  }
+
+  /* ==========================================
+     自動退避（localStorage）と復元
+     変更のたびに commit() から saveBackup() が呼ばれる。
+     ファイル埋め込みの comment-store を正とし、退避側にしかないIDだけを復元候補にする。
+     ========================================== */
+  function backupKey() { return 'cl-backup:' + location.pathname; }
+
+  // 本文の全テキストノード（自前UIと script/style を除く）。
+  // ハイライトの位置はこのテキスト列の文字オフセットで退避する。引用文字列の検索では
+  // 重複や空白差で誤爆するが、「同じファイルを開き直す」前提ならオフセットは正確に一致する。
+  function streamTextNodes() {
+    var out = [];
+    var walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT, {
+      acceptNode: function (n) {
+        var p = n.parentNode;
+        if (!p) return NodeFilter.FILTER_REJECT;
+        if (p.closest && p.closest('#cl-sidebar,#cl-dock,#cl-toolbar,#cl-pins,#cl-guide,#cl-guide-fab,#cl-toast,script,style,noscript')) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    while (walker.nextNode()) out.push(walker.currentNode);
+    return out;
+  }
+
+  // 全ハイライトのアンカーを1回の走査でまとめて取る。
+  // コメントごとに全ノードを走査すると コメント数×ノード数 になり、
+  // 大きい資料でコメントが溜まると保存のたびに重くなるため
+  function anchorsForAll() {
+    var anchors = {};
+    var nodes = streamTextNodes(), pos = 0;
+    for (var i = 0; i < nodes.length; i++) {
+      var len = nodes[i].textContent.length;
+      var p = nodes[i].parentNode;
+      var span = p && p.closest ? p.closest('.comment-highlight') : null;
+      if (span) {
+        var id = span.getAttribute('data-id');
+        if (id) {
+          if (!anchors[id]) anchors[id] = [pos, pos + len];
+          else anchors[id][1] = pos + len;
+        }
+      }
+      pos += len;
+    }
+    return anchors;
+  }
+
+  function rangeFromOffsets(start, end) {
+    var nodes = streamTextNodes(), pos = 0, range = document.createRange(), haveStart = false;
+    for (var i = 0; i < nodes.length; i++) {
+      var len = nodes[i].textContent.length;
+      if (!haveStart && start >= pos && start < pos + len) {
+        range.setStart(nodes[i], start - pos);
+        haveStart = true;
+      }
+      if (haveStart && end > pos && end <= pos + len) {
+        range.setEnd(nodes[i], end - pos);
+        return range;
+      }
+      pos += len;
+    }
+    return null;
+  }
+
+  function saveBackup() {
+    try {
+      if (!comments.length) { localStorage.removeItem(backupKey()); return; }
+      var all = anchorsForAll();
+      var anchors = {};
+      comments.forEach(function (c) {
+        if (c.type === 'text' && all[c.id]) anchors[c.id] = all[c.id];
+      });
+      localStorage.setItem(backupKey(), JSON.stringify({
+        v: 1, savedAt: new Date().toISOString(),
+        bodyHash: hashStr(streamText()),   // オフセット復元が使えるか（本文が同一か）の判定用
+        comments: comments, users: users, anchors: anchors
+      }));
+    } catch (e) { /* localStorageが使えない環境では退避なしで動く */ }
+  }
+
+  function clearBackup() { try { localStorage.removeItem(backupKey()); } catch (e) {} }
+
+  /* ==========================================
+     版をまたぐ再アンカー
+     資料の本文が更新されたあとでも、引用（quote）が本文に一意に残っていれば
+     ハイライトを貼り直す。原則は「完全一致のみ。曖昧なら貼らない」。
+     間違った場所に自信満々で付いた指摘は、消えた指摘より害が大きい。
+     ========================================== */
+  var CTX_LEN = 30;   // 保存する前後文脈の長さ（同じ引用が複数あるときの絞り込み用）
+
+  function streamText() {
+    var nodes = streamTextNodes(), raw = '';
+    for (var i = 0; i < nodes.length; i++) raw += nodes[i].textContent;
+    return raw;
+  }
+
+  function hashStr(s) {
+    var h = 5381;
+    for (var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+    return String(h);
+  }
+
+  // 空白類の連続を1つの空白に潰す。照合は正規化後の文字列で行うが、
+  // ハイライトを貼るには生テキストのオフセットが要るので、対応表(map)を一緒に作る
+  function normalizeWithMap(raw) {
+    var norm = '', map = [], inWs = false;
+    for (var i = 0; i < raw.length; i++) {
+      if (/\s/.test(raw[i])) {
+        if (!inWs) { norm += ' '; map.push(i); inWs = true; }
+      } else {
+        norm += raw[i]; map.push(i); inWs = false;
+      }
+    }
+    return { norm: norm, map: map };
+  }
+
+  function normalizeQuote(q) {
+    return String(q == null ? '' : q).replace(/\s+/g, ' ').trim();
+  }
+
+  function findQuoteMatches(doc, nq) {
+    var out = [], from = 0;
+    while (true) {
+      var i = doc.norm.indexOf(nq, from);
+      if (i < 0) break;
+      out.push(i);
+      from = i + 1;
+    }
+    return out;
+  }
+
+  // 前後文脈の照合。正規化した prefix が一致候補の直前テキスト（末尾空白は無視）の
+  // 末尾と一致し、suffix も同様に直後と一致すれば通す。文書端で短く取れた文脈は短いまま比べる
+  function contextMatches(doc, i, nq, c) {
+    var np = normalizeQuote(c.prefix), ns = normalizeQuote(c.suffix);
+    if (np) {
+      var before = doc.norm.slice(0, i).replace(/\s+$/, '');
+      if (before.slice(-np.length) !== np) return false;
+    }
+    if (ns) {
+      var after = doc.norm.slice(i + nq.length).replace(/^\s+/, '');
+      if (after.slice(0, ns.length) !== ns) return false;
+    }
+    return true;
+  }
+
+  // 一意に特定できた場合だけ貼る。0件、または絞っても複数なら貼らない
+  function tryAnchorByQuote(c, doc) {
+    var nq = normalizeQuote(c.quote);
+    if (!nq) return false;
+    var hits = findQuoteMatches(doc, nq);
+    var chosen = -1;
+    if (hits.length === 1) chosen = hits[0];
+    else if (hits.length > 1 && (c.prefix != null || c.suffix != null)) {
+      var passed = [];
+      for (var k = 0; k < hits.length; k++) {
+        if (contextMatches(doc, hits[k], nq, c)) passed.push(hits[k]);
+      }
+      if (passed.length === 1) chosen = passed[0];
+    }
+    if (chosen < 0) return false;
+    try {
+      var r = rangeFromOffsets(doc.map[chosen], doc.map[chosen + nq.length - 1] + 1);
+      if (!r) return false;
+      wrapRange(r, c.id, safeColor(c.color));
+      return true;
+    } catch (e) { return false; }
+  }
+
+  // 新規コメント保存時に、前後の本文テキストを記録する（改修5a）
+  function captureContext(id) {
+    var a = anchorsForAll()[id];
+    if (!a) return null;
+    var raw = streamText();
+    return {
+      prefix: raw.slice(Math.max(0, a[0] - CTX_LEN), a[0]),
+      suffix: raw.slice(a[1], a[1] + CTX_LEN)
+    };
+  }
+
+  // 読み込み時、ハイライトを失っているテキストコメントの貼り直しを試みる（改修5b）。
+  // DOMにしか触れないので、成否にかかわらず未保存フラグは立てない
+  function reanchorOrphans() {
+    var doc = null;
+    comments.forEach(function (c) {
+      if (c.type !== 'text') return;
+      if (document.querySelector('.comment-highlight[data-id="' + c.id + '"]')) return;
+      if (!doc) doc = normalizeWithMap(streamText());
+      tryAnchorByQuote(c, doc);
+    });
+  }
+
+  function offerRestore() {
+    var raw = null;
+    try { raw = localStorage.getItem(backupKey()); } catch (e) { return; }
+    if (!raw) return;
+    var data = null;
+    try { data = JSON.parse(raw); } catch (e) { clearBackup(); return; }
+    var have = {};
+    comments.forEach(function (c) { have[c.id] = true; });
+    var candidates = ((data && data.comments) || []).filter(function (c) { return c && c.id && !have[c.id]; });
+    if (!candidates.length) { clearBackup(); return; }
+    var ok = confirm('前回の未保存コメントが ' + candidates.length + ' 件あります。復元しますか？\n（キャンセルすると破棄されます）');
+    if (!ok) { clearBackup(); return; }
+    // 本文が退避時と同一ならオフセットで正確に貼る。書き換わっていたら、誤った位置に
+    // 貼る危険があるのでオフセットは捨て、引用照合（一意のときだけ）に切り替える。
+    // それでも特定できなければ、コメント本文は救い、位置は警告表示に任せる
+    var sameBody = data.bodyHash != null && data.bodyHash === hashStr(streamText());
+    var doc = sameBody ? null : normalizeWithMap(streamText());
+    candidates.forEach(function (c) {
+      if (c.type !== 'text') return;
+      if (sameBody && data.anchors && data.anchors[c.id]) {
+        try {
+          var r = rangeFromOffsets(data.anchors[c.id][0], data.anchors[c.id][1]);
+          if (r) wrapRange(r, c.id, safeColor(c.color));
+        } catch (e) {}
+      } else if (doc) {
+        tryAnchorByQuote(c, doc);
+      }
+    });
+    commit({ type: 'restore', comments: candidates, users: data.users });
+  }
+
+  /* ==========================================
+     指摘のMarkdown化とコピー（AI修正への受け渡し用）
+     exportHTML とは独立。押してもコメントデータと未保存フラグには触れない。
+     ========================================== */
+  function nearestHeadingText(y) {
+    var hostTop = host.getBoundingClientRect().top;
+    var bestText = '', bestTop = -Infinity;
+    var hs = host.querySelectorAll('h1, h2, h3');
+    for (var i = 0; i < hs.length; i++) {
+      if (hs[i].closest('#cl-sidebar,#cl-dock,#cl-guide,#cl-guide-fab,#cl-toast')) continue;
+      var top = hs[i].getBoundingClientRect().top - hostTop;
+      if (top <= y && top > bestTop) {
+        bestTop = top;
+        bestText = hs[i].textContent.replace(/\s+/g, ' ').trim();
+      }
+    }
+    return bestText;
+  }
+
+  function buildReviewMarkdown() {
+    var title = (document.title || '').trim() || 'HTML資料';
+    var out = ['以下はHTML資料「' + title + '」へのレビュー指摘です。各指摘の「対象」の引用を本文から検索し、指摘内容を反映してください。',
+      '各指摘には「状態」があります。状態が「完了」のものは対応済みです。記録として残しているだけなので、再度修正しないでください。',
+      'ラベルは優先度です。must＝必ず直す、want＝できれば直す、nit＝細かい好み。ラベルが無いものは優先度の指定なしです。',
+      '「返信」はその指摘に付いたやりとりです。最後の返信が最新の状況を表します。', ''];
+    orderedComments().forEach(function (c, i) {
+      var when = fmtFull(c.date), upd = fmtFull(c.updatedAt);
+      var lab = labelOf(c);
+      out.push('## 指摘 ' + (i + 1) + (lab ? ' [' + lab + ']' : '') + '（' + (c.author || '不明') +
+               (when ? '、' + when : '') + (upd && upd !== when ? '、最終更新 ' + upd : '') + '）');
+      out.push(isDone(c)
+        ? '状態: 完了（' + (c.resolvedBy || '担当者不明') + (fmtFull(c.resolvedAt) ? '、' + fmtFull(c.resolvedAt) : '') + '）※対応済み。修正不要'
+        : '状態: 未対応');
+      if (c.type === 'pin') {
+        var near = nearestHeadingText(c.y || 0);
+        out.push('対象: 図・画面上の位置への指摘（ピン）' + (near ? '。最寄りの見出し: 「' + near + '」' : ''));
+      } else {
+        var lost = !document.querySelector('.comment-highlight[data-id="' + c.id + '"]');
+        out.push(lost ? '対象（注意: 本文中に見つかりません。資料の更新で書き換わった＝対応済みの可能性があります。引用は指摘時点のもの）:' : '対象:');
+        String(c.quote == null ? '' : c.quote).split('\n').forEach(function (q) { out.push('> ' + q); });
+      }
+      out.push('指摘:');
+      String(c.text == null ? '' : c.text).split('\n').forEach(function (t) { out.push(t); });
+      var reps = repliesOf(c);
+      if (reps.length) {
+        out.push('返信:');
+        reps.forEach(function (r) {
+          var rw = fmtFull(r.updatedAt || r.date);
+          var head = '- ' + (r.author || '不明') + (rw ? '（' + rw + '）' : '') + ': ';
+          String(r.text == null ? '' : r.text).split('\n').forEach(function (line, k) {
+            out.push(k === 0 ? head + line : '  ' + line);
+          });
+        });
+      }
+      out.push('');
+    });
+    return out.join('\n');
+  }
+
+  function flashButton(btn, label) {
+    if (!btn || btn.dataset.flashing) return;
+    var orig = btn.textContent;
+    btn.dataset.flashing = '1';
+    btn.textContent = label;
+    setTimeout(function () { btn.textContent = orig; delete btn.dataset.flashing; }, 1400);
+  }
+
+  // 確認を求めない軽い通知。押すと即座に消せる。確認が要る操作（削除など）には使わない
+  function showToast(html, ms) {
+    var el = $('#cl-toast');
+    if (!el) return;
+    el.innerHTML = html;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    // 消えたら中身も捨てる。文面をDOMに残したままにすると、資料に data-comment-host が無く
+    // host が body に落ちる資料で、通知文が「本文のテキスト」として走査に混ざる
+    toastTimer = setTimeout(function () {
+      el.classList.remove('show');
+      setTimeout(function () { if (!el.classList.contains('show')) el.innerHTML = ''; }, 400);
+    }, ms || 7000);
+  }
+
+  function clearToast() {
+    var el = $('#cl-toast');
+    if (!el) return;
+    clearTimeout(toastTimer);
+    el.classList.remove('show');
+    el.innerHTML = '';
+  }
+
+  function copyReview() {
+    var btn = $('#cl-copy');
+    if (!comments.length) { flashButton(btn, 'コメントがありません'); return; }
+    var md = buildReviewMarkdown();
+    var done = function () { flashButton(btn, '✅ コピーしました'); };
+    var fall = function () { fallbackCopy(md) ? done() : flashButton(btn, 'コピーできませんでした'); };
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(md).then(done, fall);
+      else fall();
+    } catch (e) { fall(); }
+  }
+
+  function fallbackCopy(text) {
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch (e) { return false; }
+  }
+
+  /* ---------- スクロール：ページ本体とサイドバーで別関数に分ける ---------- */
+  function centerInPage(el) {
+    if (!el) return;
+    var r = el.getBoundingClientRect();
+    if (!r.height && !r.width) return;                      // 非表示なら何もしない
+    var vw = window.innerHeight;
+    var top = r.top + window.scrollY - vw / 2 + r.height / 2;
+    window.scrollTo({ top: Math.max(0, top), behavior: SMOOTH });
+  }
+  function centerInList(el) {
+    var box = $('#cl-list');
+    if (!box || !el) return;
+    var r = el.getBoundingClientRect(), br = box.getBoundingClientRect();
+    if (!r.height && !r.width) return;
+    var top = r.top - br.top + box.scrollTop - box.clientHeight / 2 + r.height / 2;
+    box.scrollTo({ top: Math.max(0, top), behavior: SMOOTH });
+  }
+
+  /* ---------- サイドバー開閉：読んでいた位置を保つ ---------- */
+  // 画面中央に「実際に見えている文字位置」を掴む。要素の箱では上端が画面外のことがあり、
+  // 折り返しが変わったときの補正量がずれる
+  function anchorAtCenter() {
+    var w = window.innerWidth - (root.classList.contains('cl-open') ? sidebarWidth() : 0);
+    var x = Math.max(2, Math.round(w / 2)), y = Math.round(window.innerHeight / 2);
+    var range = null;
+    if (document.caretRangeFromPoint) {
+      range = document.caretRangeFromPoint(x, y);
+    } else if (document.caretPositionFromPoint) {
+      var p = document.caretPositionFromPoint(x, y);
+      if (p) { range = document.createRange(); range.setStart(p.offsetNode, p.offset); range.collapse(true); }
+    }
+    if (range) {
+      var owner = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentNode;
+      var r = range.getBoundingClientRect();
+      if (owner && owner.closest && !owner.closest('#cl-sidebar,#cl-dock,#cl-toolbar,#cl-guide,#cl-guide-fab,#cl-toast') && (r.height || r.width)) return range;
+    }
+    var el = document.elementFromPoint(x, y);
+    return el && el.closest && !el.closest('#cl-sidebar,#cl-dock,#cl-toolbar,#cl-guide,#cl-guide-fab,#cl-toast') ? el : null;
+  }
+  function sidebarWidth() {
+    var sb = $('#cl-sidebar');
+    return sb && sb.offsetWidth ? sb.offsetWidth : 360;
+  }
+  function setSidebar(open, anchor) {
+    if (root.classList.contains('cl-open') === !!open) return;
+    var a = anchor || anchorAtCenter();
+    var before = a ? a.getBoundingClientRect().top : null;
+    root.classList.toggle('cl-open', !!open);
+    $('[data-cl="toggle-sidebar"]').classList.toggle('on', !!open);
+    if (a && before !== null) {
+      var after = a.getBoundingClientRect().top;             // ここで強制レイアウト
+      // 資料側が html{scroll-behavior:smooth} を持っていても、位置合わせだけは必ず即時に行う
+      if (after !== before) window.scrollBy({ top: after - before, left: 0, behavior: 'instant' });
+    }
+    if (!open && draft) cancelDraft();
+  }
+
+  /* ---------- ユーザーマスタ ---------- */
+  function renderUsers() {
+    var options = $('#cl-user-options');
+    options.innerHTML = '';
+    users.forEach(function (u) {
+      var o = document.createElement('option');
+      o.value = u.name;
+      options.appendChild(o);
+    });
+
+    if (!activeUserId || !users.some(function (u) { return u.id === activeUserId; })) {
+      var saved = null;
+      try { saved = localStorage.getItem('cl-user-id'); } catch (e) {}
+      activeUserId = users.some(function (u) { return u.id === saved; }) ? saved : users[0].id;
+    }
+    paintUserCombo();
+
+    var list = $('#cl-master-list');
+    list.innerHTML = '';
+    users.forEach(function (u) {
+      var row = document.createElement('div'); row.className = 'cl-master-item';
+      var c = document.createElement('input'); c.type = 'color'; c.value = safeColor(u.color);
+      c.onchange = function (e) { updateUser(u.id, 'color', e.target.value); };
+      var n = document.createElement('input'); n.type = 'text'; n.value = u.name;
+      n.onchange = function (e) { updateUser(u.id, 'name', e.target.value); };
+      var d = document.createElement('button'); d.className = 'cl-ibtn del'; d.textContent = '🗑️'; d.title = '削除';
+      d.disabled = users.length <= 1;
+      d.onclick = function () {
+        if (users.length <= 1) return;
+        commit({ type: 'user-delete', id: u.id });
+      };
+      row.appendChild(c); row.appendChild(n); row.appendChild(d);
+      list.appendChild(row);
+    });
+    var nc = $('#cl-new-color');
+    if (nc) nc.value = nextUserColor();
+  }
+
+  // 操作中のユーザー欄の見た目（名前と色のドット）を、いまの activeUserId に合わせて描き直す
+  function paintUserCombo() {
+    var input = $('#cl-user'), dot = $('#cl-user-dot'), u = currentUser();
+    if (input && document.activeElement !== input) input.value = u ? u.name : '';
+    if (dot) dot.style.background = safeColor(u && u.color);
+  }
+
+  function setActiveUser(id) {
+    var u = users.filter(function (x) { return x.id === id; })[0];
+    if (!u) return false;
+    activeUserId = u.id;
+    try { localStorage.setItem('cl-user-id', u.id); } catch (e) {}
+    paintUserCombo();
+    return true;
+  }
+
+  // 名前を確定：既存のレビュアーと同じ名前（大小文字・前後空白は無視）ならその人に切り替え、
+  // 一致しなければその場で新しいレビュアーとして追加してから切り替える
+  function resolveUserInput() {
+    var input = $('#cl-user');
+    if (!input) return;
+    var raw = input.value.trim();
+    if (!raw) { paintUserCombo(); return; }
+    var hit = users.filter(function (u) { return u.name.trim().toLowerCase() === raw.toLowerCase(); })[0];
+    if (hit) setActiveUser(hit.id);
+    else {
+      var id = 'u-' + Date.now().toString(36);
+      commit({ type: 'user-add', user: { id: id, name: raw, color: nextUserColor() } });
+      setActiveUser(id);
+    }
+    input.blur();
+  }
+
+  // 既存の色とかぶらないパレットの先頭から割り当て、尽きたらランダムへ逃がす
+  function nextUserColor() {
+    var used = {};
+    users.forEach(function (u) { used[safeColor(u.color).toLowerCase()] = true; });
+    for (var i = 0; i < USER_PALETTE.length; i++) {
+      if (!used[USER_PALETTE[i].toLowerCase()]) return USER_PALETTE[i];
+    }
+    return '#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0');
+  }
+
+  // Enter／⌘+Enter で確定。Escapeや、確定せず離れたとき（blur）は入力中の文字を捨てて
+  // いまの操作中ユーザーの名前に戻す（コンボの値と activeUserId がずれたままにしない）
+  function initUserCombo() {
+    var input = $('#cl-user');
+    if (!input) return;
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); resolveUserInput(); }
+      else if (e.key === 'Escape') { e.preventDefault(); paintUserCombo(); input.blur(); }
+    });
+    input.addEventListener('blur', function () { paintUserCombo(); });
+  }
+
+  function updateUser(id, field, value) {
+    commit({ type: 'user-update', id: id, field: field, value: value });
+  }
+
+  // コメントと返信で同じ形（author / color）なので、追従処理も同じものを使う。
+  // 変更できたら true を返し、呼び出し側でハイライトの塗り直しを判断する
+  function applyUserRename(o, oldName, oldColor, field, value) {
+    if (!o || o.author !== oldName || o.color !== oldColor) return false;
+    if (field === 'name') o.author = value;
+    else if (field === 'color') o.color = value;
+    else return false;
+    return true;
+  }
+
+  function paintHighlight(id, color) {
+    document.querySelectorAll('.comment-highlight[data-id="' + id + '"]').forEach(function (el) {
+      if (el.tagName.toLowerCase() === 'tspan') {
+        el.style.fill = color; el.style.textDecorationColor = color;
+      } else {
+        el.style.backgroundColor = color + '33';
+        el.style.borderBottomColor = color;
+      }
+    });
+  }
+
+  /* ==========================================
+     使い方ガイド
+     出るのは左下の「📖 使い方」を押したときだけ。初回自動表示や「もう見ない」の記憶はしない
+     （受け取った人が読みたいときに読む物であって、割り込んでよい物ではない）。
+     各ページは静的マークアップで持ち、ここは表示中インデックスの付け替えだけを行う。
+     JSでDOMを組み立てないので、書き出しても増殖しない
+     ========================================== */
+  var guideStep = 0;
+
+  function guideSteps() { return document.querySelectorAll('#cl-guide .cl-g-step'); }
+
+  function guideGo(i) {
+    var steps = guideSteps(), dots = document.querySelectorAll('#cl-guide .cl-g-dot');
+    if (!steps.length) return;
+    guideStep = Math.max(0, Math.min(steps.length - 1, i));
+    for (var k = 0; k < steps.length; k++) steps[k].classList.toggle('on', k === guideStep);
+    for (var m = 0; m < dots.length; m++) dots[m].classList.toggle('on', m === guideStep);
+    var prev = $('#cl-g-prev'), next = $('#cl-g-next'), body = $('#cl-guide .cl-g-body');
+    if (prev) prev.disabled = guideStep === 0;
+    if (next) next.textContent = guideStep === steps.length - 1 ? '閉じる' : '次へ →';
+    if (body) body.scrollTop = 0;
+  }
+
+  function setGuide(open) {
+    root.classList.toggle('cl-guide-open', !!open);
+    if (open) {
+      // ガイドの裏で選択ツールバーやピンモードが生きていると、閉じた瞬間に誤爆する
+      if (pinMode) setPinMode(false);
+      var tb = $('#cl-toolbar'); if (tb) tb.style.display = 'none';
+      guideGo(0);
+      var n = $('#cl-g-next'); if (n) n.focus();
+    }
+  }
+
+  function guideNext() {
+    if (guideStep >= guideSteps().length - 1) setGuide(false);
+    else guideGo(guideStep + 1);
+  }
+
+  /* ---------- ピンモード ---------- */
+  function setPinMode(on) {
+    pinMode = !!on;
+    $('[data-cl="pinmode"]').classList.toggle('on', pinMode);
+    root.classList.toggle('cl-pinmode', pinMode);
+    if (pinMode) {
+      var s = window.getSelection(); if (s) s.removeAllRanges();
+      $('#cl-toolbar').style.display = 'none';
+    }
+  }
+
+  document.addEventListener('keydown', function (e) {
+    var t = e.target, tag = t && t.tagName;
+    var typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable);
+
+    // 保存とコピーは、入力中でもガイドを見ている間でも効くグローバル操作。
+    // ブラウザ既定の「ページを保存」を横取りするので、必ず preventDefault する
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.isComposing && e.keyCode !== 229) {
+      if (e.key === 's' || e.key === 'S') { e.preventDefault(); exportHTML(); return; }
+      if (e.shiftKey && (e.key === 'c' || e.key === 'C')) { e.preventDefault(); copyReview(); return; }
+    }
+
+    // ガイドを開いている間は、資料側のショートカットを全部止めてページ送りだけを受ける
+    if (root.classList.contains('cl-guide-open')) {
+      if (e.key === 'Escape') { e.preventDefault(); setGuide(false); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); guideGo(guideStep + 1); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); guideGo(guideStep - 1); }
+      return;
+    }
+    if (e.key === 'Escape') {
+      if (draft) { cancelDraft(); return; }
+      if (pinMode) { setPinMode(false); return; }
+      if (root.classList.contains('cl-open') && !typing) setSidebar(false);
+      return;
+    }
+    // Cmd+C / Ctrl+C などの修飾キー付き、IME変換中、入力中は無反応にする
+    if (typing || e.metaKey || e.ctrlKey || e.altKey || e.isComposing || e.keyCode === 229) return;
+    if (e.key === 'c' || e.key === 'C') { e.preventDefault(); setPinMode(!pinMode); }
+    // J / K で一覧の並び順どおりに次・前のコメントへ。Shift 併用で完了を飛ばす
+    else if (e.key === 'j' || e.key === 'J') { e.preventDefault(); jump(1, e.shiftKey); }
+    else if (e.key === 'k' || e.key === 'K') { e.preventDefault(); jump(-1, e.shiftKey); }
+  });
+
+  document.addEventListener('mousedown', function (e) {
+    if ($('#cl-toolbar') && !e.target.closest('#cl-toolbar')) $('#cl-toolbar').style.display = 'none';
+    if (!pinMode) return;
+    if (e.target.closest('#cl-sidebar,#cl-dock,#cl-toolbar,#cl-guide,#cl-guide-fab,#cl-toast,.comment-pin')) return;
+    if (!host.contains(e.target)) return;
+    e.preventDefault();
+    if (draft) cancelDraft();
+    var r = host.getBoundingClientRect();
+    draft = { type: 'pin', id: 'pin-' + Date.now().toString(36), x: e.clientX - r.left, y: e.clientY - r.top };
+    openForDraft();
+  });
+
+  /* ---------- テキスト選択 → ハイライト ---------- */
+  document.addEventListener('mouseup', function (e) {
+    if (pinMode) return;
+    if (e.target.closest('#cl-sidebar,#cl-dock,#cl-toolbar,#cl-guide,#cl-guide-fab,#cl-toast')) return;
+    setTimeout(function () {
+      var sel = window.getSelection(), tb = $('#cl-toolbar');
+      if (!sel || sel.isCollapsed || !sel.toString().trim() || !sel.rangeCount) { tb.style.display = 'none'; return; }
+      var range = sel.getRangeAt(0);
+      if (!host.contains(range.commonAncestorContainer.nodeType === 1 ? range.commonAncestorContainer : range.commonAncestorContainer.parentNode)) { tb.style.display = 'none'; return; }
+      savedRange = range.cloneRange();
+      var r = range.getBoundingClientRect();
+      tb.style.display = 'block';                       // position:fixed なのでビューポート座標をそのまま使う
+      tb.style.left = (r.left + r.width / 2) + 'px';
+      tb.style.top = r.top + 'px';
+    }, 0);
+  });
+  window.addEventListener('scroll', function () {
+    var tb = $('#cl-toolbar');
+    if (tb && tb.style.display === 'block') tb.style.display = 'none';
+  }, { passive: true });
+
+  function startTextComment() {
+    $('#cl-toolbar').style.display = 'none';
+    if (!savedRange) return;
+    if (draft) cancelDraft();
+    var id = 'txt-' + Date.now().toString(36);
+    var quote = savedRange.toString();
+    var spans = wrapRange(savedRange, id, safeColor(currentUser().color));
+    var s = window.getSelection(); if (s) s.removeAllRanges();
+    savedRange = null;
+    if (!spans.length) { alert('この範囲にはハイライトを付けられませんでした。選択し直してください。'); return; }
+    draft = { type: 'text', id: id, quote: quote, spans: spans };
+    openForDraft();
+  }
+
+  // 選択範囲を span（SVG内なら tspan）で包む
+  function wrapRange(range, id, color) {
+    var textNodes = [];
+    var cac = range.commonAncestorContainer;
+
+    if (cac.nodeType === 3) {
+      // ★ 単一テキストノード内の選択。TreeWalker はルート自身を返さないので個別に処理する
+      //    （ここを取りこぼすと「コメントは保存されたのにハイライトが付かない」状態になる）
+      textNodes = [cac];
+    } else {
+      var walker = document.createTreeWalker(cac, NodeFilter.SHOW_TEXT, {
+        acceptNode: function (n) {
+          if (!n.textContent.trim()) return NodeFilter.FILTER_REJECT;
+          if (n.parentNode && n.parentNode.closest && n.parentNode.closest('#cl-sidebar,#cl-dock,#cl-toolbar,#cl-guide,#cl-guide-fab,#cl-toast')) return NodeFilter.FILTER_REJECT;
+          return range.intersectsNode(n) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+        }
+      });
+      while (walker.nextNode()) textNodes.push(walker.currentNode);
+    }
+    if (!textNodes.length) return [];
+
+    // 端の部分選択を切り出す（末尾→先頭の順に処理しないとオフセットがずれる）
+    var last = textNodes.length - 1;
+    if (textNodes[last] === range.endContainer && range.endOffset < textNodes[last].length) {
+      textNodes[last].splitText(range.endOffset);
+    }
+    if (textNodes[0] === range.startContainer && range.startOffset > 0) {
+      textNodes[0] = textNodes[0].splitText(range.startOffset);
+    }
+
+    var out = [];
+    textNodes.forEach(function (node) {
+      if (!node.parentNode) return;
+      var span;
+      if (node.parentNode.closest && node.parentNode.closest('svg')) {
+        span = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+        span.setAttribute('class', 'comment-highlight');
+        span.setAttribute('data-id', id);
+        span.style.fill = color;
+        span.style.textDecoration = 'underline';
+        span.style.textDecorationColor = color;
+      } else {
+        span = document.createElement('span');
+        span.className = 'comment-highlight';
+        span.dataset.id = id;
+        span.style.backgroundColor = color + '33';
+        span.style.borderBottom = '2px solid ' + color;
+      }
+      node.parentNode.insertBefore(span, node);
+      span.appendChild(node);
+      out.push(span);
+    });
+    return out;
+  }
+
+  function unwrap(nodes) {
+    Array.prototype.slice.call(nodes).forEach(function (n) {
+      var p = n.parentNode;
+      if (!p) return;
+      while (n.firstChild) p.insertBefore(n.firstChild, n);
+      p.removeChild(n);
+      p.normalize();
+    });
+  }
+
+  // 本文のハイライト・ピンのクリックはイベント委譲で拾う（再描画しても張り直し不要）
+  document.addEventListener('click', function (e) {
+    var h = e.target.closest ? e.target.closest('.comment-highlight') : null;
+    if (h && h.dataset && h.dataset.id) {
+      // リンクの上にコメントを付けた場合、押すとリンク先へ飛んでしまうので既定動作を止める。
+      // リンクを辿りたいときはハイライトの外側を押す
+      e.preventDefault();
+      e.stopPropagation();
+      focusFromDoc(h.dataset.id, h);
+    }
+  });
+
+  /* ---------- ドラフト（新規・編集・返信） ----------
+     draft の形は4種類。並び替えを入れた時点で配列インデックスは信用できないので、
+     編集対象は必ずidで指す。
+       新規  : {type:'text'|'pin', id, ...}
+       編集  : {editId}
+       返信  : {replyTo}
+       返信編集: {replyTo, editReplyId}
+  */
+  function openForDraft() { setSidebar(true); render(); }
+  function isNewDraft(d) { return !!d && (d.type === 'text' || d.type === 'pin'); }
+
+  function saveDraft() {
+    var ta = $('#cl-draft-text');
+    if (!ta || !draft) return;
+    var text = ta.value.trim();
+    if (!text) { cancelDraft(); return; }
+    var action;
+    if (draft.editId) {
+      action = { type: 'edit', id: draft.editId, text: text };
+    } else {
+      var u = currentUser();
+      var now = nowISO();
+      var c = { id: draft.id, type: draft.type, text: text, author: u.name, color: safeColor(u.color),
+                date: now, updatedAt: now, resolved: false };
+      if (draft.type === 'text') {
+        c.quote = draft.quote;
+        // 版をまたいだとき、同じ引用が複数あっても場所を特定できるように前後文脈を残す
+        var ctx = captureContext(draft.id);
+        if (ctx) { c.prefix = ctx.prefix; c.suffix = ctx.suffix; }
+      }
+      if (draft.type === 'pin') { c.x = draft.x; c.y = draft.y; }
+      action = { type: 'add', comment: c };
+    }
+    draft = null;                 // commit() 内の render() より先にドラフトを畳む
+    if (pinMode) setPinMode(false);
+    commit(action);
+    var item = document.getElementById('cl-item-' + activeId);
+    if (item) centerInList(item);
+  }
+
+  function cancelDraft() {
+    if (!draft) return;
+    // 新規テキストコメントを取り消すときだけ、先に貼ったハイライトを剥がす
+    if (draft.type === 'text' && !draft.editId && !draft.replyTo) unwrap(draft.spans || []);
+    draft = null;
+    render();
+  }
+
+  function editComment(id) {
+    if (!byId(id)) return;
+    if (draft) cancelDraft();
+    draft = { editId: id };
+    render();
+  }
+
+  function deleteComment(id) {
+    if (!confirm('このコメントを削除しますか？')) return;
+    commit({ type: 'delete', id: id });
+  }
+
+  /* ---------- 完了 / 完了の取り消し ---------- */
+  function toggleResolve(id) {
+    var c = byId(id);
+    if (!c) return;
+    if (draft) cancelDraft();
+    if (isDone(c)) commit({ type: 'unresolve', id: id });
+    else commit({ type: 'resolve', id: id, by: (currentUser() || {}).name || '' });
+    // 完了にするとカードが最下部へ移るので、行き先まで一覧を送る（迷子にしない）
+    var item = document.getElementById('cl-item-' + id);
+    if (item) centerInList(item);
+  }
+
+  function cycleLabel(id) {
+    var c = byId(id);
+    if (!c) return;
+    var i = LABELS.indexOf(labelOf(c) || null);
+    commit({ type: 'label', id: id, label: i < 0 ? LABELS[0] : (LABELS[i + 1] || '') });
+  }
+
+  /* ---------- 返信 ---------- */
+  function startReply(id, replyId) {
+    if (!byId(id)) return;
+    if (draft) cancelDraft();
+    draft = { replyTo: id, editReplyId: replyId || null };
+    setSidebar(true);
+    render();
+  }
+
+  function saveReply() {
+    var ta = $('#cl-reply-text');
+    if (!ta || !draft || !draft.replyTo) return;
+    var target = draft.replyTo, rid = draft.editReplyId, text = ta.value.trim();
+    draft = null;
+    if (!text) { render(); return; }
+    if (rid) {
+      commit({ type: 'reply-edit', id: target, replyId: rid, text: text });
+    } else {
+      var u = currentUser();
+      commit({ type: 'reply-add', id: target, reply: {
+        id: 'rep-' + Date.now().toString(36), text: text,
+        author: u.name, color: safeColor(u.color), date: nowISO()
+      } });
+    }
+    var item = document.getElementById('cl-item-' + target);
+    if (item) centerInList(item);
+  }
+
+  function deleteReply(id, replyId) {
+    if (!confirm('この返信を削除しますか？')) return;
+    commit({ type: 'reply-delete', id: id, replyId: replyId });
+  }
+
+  /* ---------- J / K でコメント間を移動 ---------- */
+  function jump(dir, unresolvedOnly) {
+    var ord = orderedComments().filter(function (c) { return unresolvedOnly ? !isDone(c) : true; });
+    if (!ord.length) return;
+    var i = -1;
+    for (var k = 0; k < ord.length; k++) { if (ord[k].id === activeId) { i = k; break; } }
+    var n = i < 0 ? (dir > 0 ? 0 : ord.length - 1) : i + dir;
+    if (n < 0) n = 0;
+    if (n >= ord.length) n = ord.length - 1;
+    setSidebar(true);
+    focusFromList(ord[n].id);
+    var item = document.getElementById('cl-item-' + ord[n].id);
+    if (item) centerInList(item);
+  }
+
+  /* ---------- 描画 ---------- */
+  function updateBadge() {
+    var b = $('#cl-badge');
+    var open = comments.filter(function (c) { return !isDone(c); }).length;
+    b.textContent = comments.length;
+    b.title = '未完了 ' + open + ' / 全 ' + comments.length;
+    b.style.display = comments.length ? 'flex' : 'none';
+  }
+
+  function render() {
+    var list = $('#cl-list');
+    var keepScroll = list.scrollTop;          // 再描画でリストの位置を飛ばさない
+    list.innerHTML = '';
+    pinBox.innerHTML = '';
+
+    // ピンは絶対座標なので、一覧の並び順とは無関係にまとめて描く
+    comments.forEach(function (c) {
+      if (c.type === 'pin') drawPin(c.id, c.x, c.y, safeColor(c.color), c.author, false);
+    });
+    if (draft && draft.type === 'pin') {
+      var u = currentUser();
+      drawPin(draft.id, draft.x, draft.y, safeColor(u.color), u.name, true);
+    }
+
+    if (isNewDraft(draft)) list.appendChild(draftCard(''));
+    if (!comments.length && !draft) {
+      var empty = document.createElement('div');
+      empty.className = 'cl-empty';
+      empty.textContent = 'コメントはまだありません';
+      list.appendChild(empty);
+    }
+
+    var ordered = orderedComments();
+    var doneTotal = comments.filter(isDone).length;
+    var dividerDone = false;
+    ordered.forEach(function (c) {
+      if (isDone(c) && !dividerDone) {
+        dividerDone = true;
+        var dv = document.createElement('div');
+        dv.className = 'cl-divider';
+        dv.textContent = '完了済み ' + doneTotal + '件';
+        list.appendChild(dv);
+      }
+      if (draft && draft.editId === c.id) { list.appendChild(draftCard(c.text)); return; }
+      list.appendChild(cardFor(c));
+    });
+
+    list.scrollTop = keepScroll;
+    if (activeId) nodesFor(activeId).forEach(function (n) { n.classList.add('cl-active'); });
+  }
+
+  function cardFor(c) {
+    var done = isDone(c);
+    var lab = labelOf(c);
+    var edited = c.updatedAt && c.date && c.updatedAt !== c.date;
+    var when = fmtShort(edited ? c.updatedAt : c.date);
+    var orphan = c.type === 'text' && !document.querySelector('.comment-highlight[data-id="' + c.id + '"]');
+
+    var item = document.createElement('div');
+    item.className = 'cl-item' + (c.id === activeId ? ' cl-active' : '') + (done ? ' cl-done' : '');
+    item.id = 'cl-item-' + c.id;
+    item.style.borderLeftColor = safeColor(c.color);
+    // カード内のボタン類（完了・ラベル・返信・編集・削除）は data-cl を持つ。
+    // それ以外を押したときだけ本文へのジャンプとして扱う
+    item.onclick = function (e) {
+      if (e.target.closest && (e.target.closest('[data-cl]') || e.target.closest('textarea'))) return;
+      focusFromList(c.id);
+    };
+
+    var quote = c.type === 'pin'
+      ? '<div class="cl-quote" style="border-left-color:transparent;padding-left:0;background:none;">📍 画面へのピン留め</div>'
+      : '<div class="cl-quote">' + esc(c.quote) + '</div>';
+
+    var reps = repliesOf(c).map(function (r) {
+      return '<div class="cl-reply">' +
+        '<div class="cl-rmeta"><span style="font-weight:700;color:' + esc(safeColor(r.color)) + '">' + esc(r.author) + '</span>' +
+        '<span>' + esc(fmtShort(r.updatedAt || r.date)) + '</span>' +
+        '<button class="cl-ibtn" data-cl="reply-edit" data-id="' + esc(c.id) + '" data-rid="' + esc(r.id) + '" title="返信を編集">✏️</button>' +
+        '<button class="cl-ibtn del" data-cl="reply-del" data-id="' + esc(c.id) + '" data-rid="' + esc(r.id) + '" title="返信を削除">🗑️</button>' +
+        '</div><div class="cl-rtext">' + esc(r.text) + '</div></div>';
+    }).join('');
+
+    item.innerHTML =
+      '<div class="cl-meta"><div class="cl-meta-l">' +
+        '<span class="cl-author" style="background:' + esc(safeColor(c.color)) + '">' + esc(c.author) + '</span>' +
+        '<button class="cl-label ' + (lab || 'none') + '" data-cl="label" data-id="' + esc(c.id) +
+          '" title="優先度（クリックで must → want → nit → なし）">' + (lab || '＋ラベル') + '</button>' +
+        '<span>' + (edited ? '✎ ' : '') + esc(when) + '</span>' +
+      '</div><div class="cl-meta-r">' +
+        '<button class="cl-ibtn" data-cl="resolve" data-id="' + esc(c.id) + '" title="' +
+          (done ? '完了を取り消す' : '完了にする') + '">' + (done ? '🔄' : '✅') + '</button>' +
+        '<button class="cl-ibtn" data-cl="edit" data-id="' + esc(c.id) + '" title="編集">✏️</button>' +
+        '<button class="cl-ibtn del" data-cl="del" data-id="' + esc(c.id) + '" title="削除">🗑️</button>' +
+      '</div></div>' + quote +
+      '<div class="cl-body">' + esc(c.text) + '</div>' +
+      (orphan ? '<div class="cl-orphan">⚠️ 本文中に対象が見つかりません。資料の更新で該当箇所が書き換わった（指摘が反映された）可能性があります</div>' : '') +
+      (done ? '<div class="cl-done-note">✅ 完了' + (c.resolvedBy ? '（' + esc(c.resolvedBy) + '）' : '') +
+              (fmtShort(c.resolvedAt) ? ' ' + esc(fmtShort(c.resolvedAt)) : '') + '</div>' : '') +
+      (reps ? '<div class="cl-replies">' + reps + '</div>' : '');
+
+    if (draft && draft.replyTo === c.id) item.appendChild(replyDraft(c));
+    else {
+      var rb = document.createElement('button');
+      rb.className = 'cl-reply-btn';
+      rb.setAttribute('data-cl', 'reply');
+      rb.setAttribute('data-id', c.id);
+      rb.textContent = '💬 返信';
+      item.appendChild(rb);
+    }
+    return item;
+  }
+
+  function replyDraft(c) {
+    var initial = '';
+    if (draft.editReplyId) {
+      var r = repliesOf(c).filter(function (x) { return x.id === draft.editReplyId; })[0];
+      initial = r ? r.text : '';
+    }
+    var box = document.createElement('div');
+    box.className = 'cl-rdraft';
+    box.innerHTML =
+      '<textarea id="cl-reply-text" placeholder="返信を入力…"></textarea>' +
+      '<div class="cl-draft-actions"><span class="cl-hint">Cmd/Ctrl + Enter で保存</span>' +
+      '<span><button class="cl-btn cancel" data-cl="rdraft-cancel">キャンセル</button> ' +
+      '<button class="cl-btn save" data-cl="rdraft-save">保存</button></span></div>';
+    var ta = box.querySelector('textarea');
+    ta.value = initial;
+    ta.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveReply(); }
+    });
+    requestAnimationFrame(function () {
+      ta.focus();
+      ta.setSelectionRange(ta.value.length, ta.value.length);
+      centerInList(box);
+    });
+    return box;
+  }
+
+  function draftCard(initial) {
+    var card = document.createElement('div');
+    card.className = 'cl-item cl-draft';
+    card.innerHTML =
+      '<div style="font-size:11px;color:var(--cl-mid);margin-bottom:8px;font-weight:700;">編集中…</div>' +
+      '<textarea id="cl-draft-text" placeholder="コメントを入力…"></textarea>' +
+      '<div class="cl-draft-actions"><span class="cl-hint">Cmd/Ctrl + Enter で保存</span>' +
+      '<span><button class="cl-btn cancel" data-cl="draft-cancel">キャンセル</button> ' +
+      '<button class="cl-btn save" data-cl="draft-save">保存</button></span></div>';
+    var ta = card.querySelector('textarea');
+    ta.value = initial || '';
+    ta.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveDraft(); }
+    });
+    requestAnimationFrame(function () {
+      ta.focus();
+      ta.setSelectionRange(ta.value.length, ta.value.length);
+      centerInList(card);
+    });
+    return card;
+  }
+
+  function drawPin(id, x, y, color, name, isDraft) {
+    var pin = document.createElement('div');
+    pin.className = 'comment-pin' + (id === activeId ? ' cl-active' : '');
+    pin.dataset.id = id;
+    pin.style.left = x + 'px';
+    pin.style.top = y + 'px';
+    pin.style.backgroundColor = color;
+    if (isDraft) pin.style.opacity = '.6';
+    pin.textContent = String(name || '?').charAt(0).toUpperCase();
+
+    var moved = false, sx, sy, px, py;
+    pin.addEventListener('mousedown', function (e) {
+      e.stopPropagation(); e.preventDefault();
+      moved = false; sx = e.clientX; sy = e.clientY;
+      px = parseFloat(pin.style.left); py = parseFloat(pin.style.top);
+      function mv(ev) {
+        if (Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) > 3) moved = true;
+        pin.style.left = (px + ev.clientX - sx) + 'px';
+        pin.style.top = (py + ev.clientY - sy) + 'px';
+      }
+      function up() {
+        document.removeEventListener('mousemove', mv);
+        document.removeEventListener('mouseup', up);
+        if (!moved) return;
+        var nx = parseFloat(pin.style.left), ny = parseFloat(pin.style.top);
+        if (draft && draft.id === id) {
+          // ドラフトはまだ comments に入っていないので、単一入口の対象外
+          draft.x = nx; draft.y = ny; dirty = true;
+        } else {
+          commit({ type: 'pin-move', id: id, x: nx, y: ny });
+        }
+      }
+      document.addEventListener('mousemove', mv);
+      document.addEventListener('mouseup', up);
+    });
+    pin.addEventListener('click', function (e) { e.stopPropagation(); if (!moved) focusFromDoc(id, pin); });
+    pinBox.appendChild(pin);
+  }
+
+  /* ---------- フォーカス連動 ---------- */
+  function clearActive() {
+    document.querySelectorAll('.cl-active').forEach(function (el) { el.classList.remove('cl-active'); });
+  }
+  // 本文側をクリック：本文は動かさない。サイドバーだけ該当カードへ寄せる
+  function focusFromDoc(id, anchorEl) {
+    setSidebar(true, anchorEl);
+    clearActive(); activeId = id;
+    nodesFor(id).forEach(function (n) { n.classList.add('cl-active'); });
+    var item = document.getElementById('cl-item-' + id);
+    if (item) { item.classList.add('cl-active'); requestAnimationFrame(function () { centerInList(item); }); }
+  }
+  // サイドバー側をクリック：本文をその位置までスクロールする
+  function focusFromList(id) {
+    clearActive(); activeId = id;
+    var item = document.getElementById('cl-item-' + id);
+    if (item) item.classList.add('cl-active');
+    var targets = nodesFor(id);
+    targets.forEach(function (n) { n.classList.add('cl-active'); });
+    if (targets.length) centerInPage(targets[0]);
+  }
+
+  /* ---------- 書き出し ---------- */
+  function exportHTML() {
+    if (pinMode) setPinMode(false);
+    if (draft) cancelDraft();
+    setSidebar(false);
+    $('#cl-master').classList.remove('open');
+    $('#cl-toolbar').style.display = 'none';
+    // ガイドは静的マークアップなので閉じて1ページ目に戻すだけで、書いたときの状態に揃う
+    setGuide(false);
+    guideGo(0);
+    // トーストの文面は実行時に入れたもの。空にしてから書き出さないと、2回目以降の保存で
+    // 前回の通知文がファイルに焼き込まれ、受け取った側で「資料の本文」として扱われてしまう
+    clearToast();
+    clearActive();
+    activeId = null;
+
+    // 実行時に組み立てたDOMは保存しない（毎回焼き込まれてファイルが太るのを防ぐ）
+    var listHTML = $('#cl-list').innerHTML, pinHTML = pinBox.innerHTML;
+    $('#cl-list').innerHTML = '';
+    pinBox.innerHTML = '';
+    var hostPos = host.getAttribute('style');
+
+    // 閉じscriptタグや、差し込みブロックの境界マーカーそのものをコメントに書かれても、
+    // ファイル構造と更新スクリプトの境界検出が壊れないようにエスケープする
+    var enc = function (o) {
+      return JSON.stringify(o)
+        .replace(/</g, '\\u003c')
+        .replace(/COMMENT-LAYER/g, 'COMMENT\\u002dLAYER');
+    };
+    document.getElementById('comment-store').textContent = enc(comments);
+    document.getElementById('user-master').textContent = enc(users);
+
+    var html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+
+    $('#cl-list').innerHTML = listHTML;
+    pinBox.innerHTML = pinHTML;
+    if (hostPos != null) host.setAttribute('style', hostPos);
+
+    var name = decodeURIComponent((location.pathname.split('/').pop() || '')) || (document.title || 'document');
+    name = name.replace(/\.html?$/i, '')
+      .replace(/_ver\d+\.\d+/gi, '')
+      .replace(/_\d{8}_\d{6}/g, '')
+      .replace(/_\d{10,14}/g, '')
+      .replace(/[_\s]+$/, '');
+    var d = new Date(), p = function (n) { return String(n).padStart(2, '0'); };
+    var stamp = String(d.getFullYear()).slice(-2) + p(d.getMonth() + 1) + p(d.getDate()) + p(d.getHours()) + p(d.getMinutes());
+
+    var a = document.createElement('a');
+    var url = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }));
+    a.href = url; a.download = name + '_' + stamp + '.html';
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    dirty = false;
+    clearBackup();                // ダウンロードした時点で退避データは役目を終える
+
+    // 「保存」と表示はしていても、実体はこのパソコンへのダウンロード。元のファイルは書き換わらないので、
+    // 相手に見せるにはいま落ちたファイルそのものを送る必要があることを、保存のたびに毎回念押しする
+    showToast('📥 <strong>保存しました。</strong>ただし保存先は、あなたのパソコンの中だけです。<br>' +
+      '相手にコメントを見せるには、<strong>いま保存されたこのファイルを</strong>Slackやメールでそのまま送ってください。');
+  }
+
+  window.addEventListener('beforeunload', function (e) {
+    if (!dirty) return;
+    e.preventDefault(); e.returnValue = '';
+  });
+
+  /* ---------- 操作の入口をまとめて委譲 ---------- */
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest ? e.target.closest('[data-cl]') : null;
+    if (!t) return;
+    var a = t.getAttribute('data-cl');
+    if (a === 'close') setSidebar(false);
+    else if (a === 'toggle-sidebar') setSidebar(!root.classList.contains('cl-open'));
+    else if (a === 'pinmode') setPinMode(!pinMode);
+    else if (a === 'master') $('#cl-master').classList.toggle('open');
+    else if (a === 'add-user') {
+      var n = $('#cl-new-name').value.trim();
+      if (!n) return;
+      commit({ type: 'user-add', user: { id: 'u-' + Date.now().toString(36), name: n, color: safeColor($('#cl-new-color').value) } });
+      $('#cl-new-name').value = '';
+    }
+    else if (a === 'edit') editComment(t.getAttribute('data-id'));
+    else if (a === 'del') deleteComment(t.getAttribute('data-id'));
+    else if (a === 'resolve') toggleResolve(t.getAttribute('data-id'));
+    else if (a === 'label') cycleLabel(t.getAttribute('data-id'));
+    else if (a === 'reply') startReply(t.getAttribute('data-id'), null);
+    else if (a === 'reply-edit') startReply(t.getAttribute('data-id'), t.getAttribute('data-rid'));
+    else if (a === 'reply-del') deleteReply(t.getAttribute('data-id'), t.getAttribute('data-rid'));
+    else if (a === 'rdraft-save') saveReply();
+    else if (a === 'rdraft-cancel') cancelDraft();
+    else if (a === 'draft-save') saveDraft();
+    else if (a === 'draft-cancel') cancelDraft();
+    else if (a === 'copy') copyReview();
+    else if (a === 'export') exportHTML();
+    else if (a === 'guide') setGuide(true);
+    else if (a === 'guide-close') setGuide(false);
+    else if (a === 'guide-prev') guideGo(guideStep - 1);
+    else if (a === 'guide-next') guideNext();
+    else if (a === 'guide-dot') guideGo(parseInt(t.getAttribute('data-i'), 10) || 0);
+  });
+  // 背景（パネルの外）を押したら閉じる
+  $('#cl-guide').addEventListener('mousedown', function (e) {
+    if (e.target === this) setGuide(false);
+  });
+  $('#cl-toolbar').addEventListener('mousedown', function (e) { e.preventDefault(); startTextComment(); });
+  $('#cl-toast').addEventListener('click', function () { this.classList.remove('show'); });
+
+  // デバッグ・テスト用の入口
+  window.__commentLayer = {
+    version: VERSION,
+    get comments() { return comments; },
+    get users() { return users; },
+    get activeUserId() { return activeUserId; },
+    setActiveUser: setActiveUser, resolveUserInput: resolveUserInput,
+    setSidebar: setSidebar, setPinMode: setPinMode,
+    focusFromList: focusFromList, focusFromDoc: focusFromDoc,
+    startTextComment: startTextComment, saveDraft: saveDraft, cancelDraft: cancelDraft,
+    render: render, exportHTML: exportHTML,
+    commit: commit, buildReviewMarkdown: buildReviewMarkdown, copyReview: copyReview,
+    toggleResolve: toggleResolve, cycleLabel: cycleLabel, editComment: editComment,
+    startReply: startReply, saveReply: saveReply, deleteReply: deleteReply,
+    jump: jump, orderedComments: orderedComments,
+    setGuide: setGuide, guideGo: guideGo, guideNext: guideNext,
+    get guideStep() { return guideStep; },
+    setSort: function (m) {
+      sortMode = m === 'doc' ? 'doc' : 'updated';
+      var s = $('#cl-sort'); if (s) s.value = sortMode;
+      render();
+    },
+    // 検証用。レイヤーが「資料の本文」と見なしているテキストそのもの。
+    // UIを足したときの除外漏れは、テスト側でセレクタを書き写すと一緒に漏れるので、
+    // 本体が使っている関数をそのまま外に出して突き合わせる
+    _streamText: function () { return streamText(); },
+    _streamTextNodes: function () { return streamTextNodes(); },
+    _setRange: function (r) { savedRange = r; }
+  };
+})();
+</script>
+<!-- ===== COMMENT-LAYER v2.4.1 : END ===== -->

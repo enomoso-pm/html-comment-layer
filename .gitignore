@@ -1,0 +1,7 @@
+# macOS
+.DS_Store
+
+# 検証で生成される中間ファイル
+*_commented.html
+*_stripped.html
+*.bak
