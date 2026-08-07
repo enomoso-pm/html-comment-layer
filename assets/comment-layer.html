@@ -1,5 +1,5 @@
 <!-- ===================================================================
-     COMMENT-LAYER v2.9.0 : START
+     COMMENT-LAYER v2.10.0 : START
      HTML資料にレビューコメント機能を後付けするドロップイン・ブロック。
      この START 〜 END までを丸ごと差し替えればバージョンアップできる。
      資料側に必要な条件：
@@ -424,9 +424,19 @@ html.cl-guide-open #cl-guide{ display:flex; }
 .cl-g-head{ display:flex; justify-content:space-between; align-items:center; gap:12px;
   padding:12px 12px 12px 20px; border-bottom:1px solid var(--cl-border); flex:0 0 auto; }
 .cl-g-title{ display:flex; align-items:center; gap:7px; font-size:15px; font-weight:700; color:var(--cl-ink); }
-.cl-g-body{ flex:1 1 auto; overflow-y:auto; overscroll-behavior:contain; padding:26px 32px 20px; }
+/* 縦は素直にスクロールさせ、横は自前のページ送りに使う */
+.cl-g-body{ flex:1 1 auto; overflow-y:auto; overscroll-behavior:contain; padding:26px 32px 20px;
+  touch-action:pan-y; }
 .cl-g-step{ display:none; }
 .cl-g-step.on{ display:block; }
+/* 送り方向に合わせて滑り込ませる。長いと操作の邪魔になるだけなので 0.18 秒 */
+@keyframes cl-g-slide-fwd{ from{ opacity:0; transform:translateX(26px); } to{ opacity:1; transform:none; } }
+@keyframes cl-g-slide-back{ from{ opacity:0; transform:translateX(-26px); } to{ opacity:1; transform:none; } }
+.cl-g-step.on.cl-g-fwd{ animation:cl-g-slide-fwd .18s cubic-bezier(.16,1,.3,1) both; }
+.cl-g-step.on.cl-g-back{ animation:cl-g-slide-back .18s cubic-bezier(.16,1,.3,1) both; }
+@media (prefers-reduced-motion:reduce){
+  .cl-g-step.on.cl-g-fwd,.cl-g-step.on.cl-g-back{ animation:none; }
+}
 .cl-g-art{ display:block; width:100%; max-width:430px; height:auto; margin:0 auto 20px; }
 .cl-g-h{ font-size:20px; font-weight:700; line-height:1.5; color:var(--cl-ink); text-align:center; margin:0 0 12px; }
 #cl-guide .cl-g-lead{ font-size:14px; line-height:1.9; margin:0 0 14px; }
@@ -1099,7 +1109,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
 (function () {
   'use strict';
   if (window.__commentLayer) return;
-  var VERSION = '2.9.0';
+  var VERSION = '2.10.0';
 
   var comments = [], users = [], pinMode = false, draft = null, dirty = false, activeId = null, booted = false;
   var activeUserId = null, toastTimer = null;
@@ -2304,11 +2314,25 @@ html.cl-guide-open #cl-guide{ display:flex; }
 
   function guideSteps() { return document.querySelectorAll('#cl-guide .cl-g-step'); }
 
+  // アニメ用のクラスは実行時に付けるものなので、書き出す前に必ず落とす。
+  // 付いたまま保存すると、受け取った人のファイルに毎回1ページぶん焼き込まれる
+  function clearGuideAnim() {
+    var steps = guideSteps();
+    for (var i = 0; i < steps.length; i++) steps[i].classList.remove('cl-g-fwd', 'cl-g-back');
+  }
+
   function guideGo(i) {
     var steps = guideSteps(), dots = document.querySelectorAll('#cl-guide .cl-g-dot');
     if (!steps.length) return;
+    var from = guideStep;
     guideStep = Math.max(0, Math.min(steps.length - 1, i));
     for (var k = 0; k < steps.length; k++) steps[k].classList.toggle('on', k === guideStep);
+    clearGuideAnim();
+    if (guideStep !== from) {
+      var el = steps[guideStep];
+      void el.offsetWidth;                     // 直前のアニメを打ち切って 再生し直す
+      el.classList.add(guideStep > from ? 'cl-g-fwd' : 'cl-g-back');
+    }
     for (var m = 0; m < dots.length; m++) dots[m].classList.toggle('on', m === guideStep);
     var prev = $('#cl-g-prev'), next = $('#cl-g-next'), body = $('#cl-guide .cl-g-body');
     if (prev) prev.disabled = guideStep === 0;
@@ -3055,6 +3079,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
     // ガイドは静的マークアップなので閉じて1ページ目に戻すだけで、書いたときの状態に揃う
     setGuide(false);
     guideGo(0);
+    clearGuideAnim();
     // トーストの文面は実行時に入れたもの。空にしてから書き出さないと、2回目以降の保存で
     // 前回の通知文がファイルに焼き込まれ、受け取った側で「資料の本文」として扱われてしまう
     clearToast();
@@ -3172,6 +3197,43 @@ html.cl-guide-open #cl-guide{ display:flex; }
   $('#cl-guide').addEventListener('mousedown', function (e) {
     if (e.target === this) setGuide(false);
   });
+
+  /* ガイドのページ送りを、指とトラックパッドでもできるようにする。
+     マウスのドラッグは拾わない（本文の選択と取り合いになるため）。 */
+  (function () {
+    var g = $('#cl-guide');
+    if (!g) return;
+    var sx = 0, sy = 0, tracking = false;
+
+    g.addEventListener('pointerdown', function (e) {
+      if (e.pointerType === 'mouse') return;
+      tracking = true; sx = e.clientX; sy = e.clientY;
+    });
+    g.addEventListener('pointerup', function (e) {
+      if (!tracking) return;
+      tracking = false;
+      var dx = e.clientX - sx, dy = e.clientY - sy;
+      // 縦に振れている動きは、本文を読むためのスクロール。横が明確に勝ったときだけ送る
+      if (Math.abs(dx) < 50 || Math.abs(dx) <= Math.abs(dy)) return;
+      guideGo(guideStep + (dx < 0 ? 1 : -1));
+    });
+    g.addEventListener('pointercancel', function () { tracking = false; });
+
+    // トラックパッドの二本指横スクロール。慣性で何ページも飛ばないよう、送ったら少し止める
+    var acc = 0, until = 0;
+    g.addEventListener('wheel', function (e) {
+      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+      e.preventDefault();
+      var now = Date.now();
+      if (now < until) return;
+      acc += e.deltaX;
+      if (Math.abs(acc) > 80) {
+        guideGo(guideStep + (acc > 0 ? 1 : -1));
+        acc = 0;
+        until = now + 350;
+      }
+    }, { passive: false });
+  })();
   $('#cl-toolbar').addEventListener('mousedown', function (e) { e.preventDefault(); startTextComment(); });
   $('#cl-toast').addEventListener('click', function () { this.classList.remove('show'); });
 
@@ -3248,4 +3310,4 @@ html.cl-guide-open #cl-guide{ display:flex; }
   };
 })();
 </script>
-<!-- ===== COMMENT-LAYER v2.9.0 : END ===== -->
+<!-- ===== COMMENT-LAYER v2.10.0 : END ===== -->

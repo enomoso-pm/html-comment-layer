@@ -837,12 +837,16 @@ try {
     URL.createObjectURL = o; window.confirm = oc; HTMLAnchorElement.prototype.click = k;
     return cap.text().then(t => JSON.stringify({
       開いた状態が残らない: t.indexOf('cl-guide-open') < 0 || !/<html[^>]*class="[^"]*cl-guide-open/.test(t),
+      // 送りアニメ用のクラスは実行時に付くもの。焼き込まれると受け取った側で毎回1ページだけ動く
+      // スタイル定義側にも同じ名前が出るので、要素の class 属性だけを見る
+      送りアニメのクラスが残らない: !/<div[^>]*class="[^"]*cl-g-step[^"]*cl-g-(fwd|back)/.test(t),
       先頭ページに戻る: (t.match(/class="cl-g-step on"/g) || []).length === 1
         && t.indexOf('<div class="cl-g-step on">') < t.indexOf('<div class="cl-g-step">'),
       ガイドが含まれる: t.indexOf('id="cl-guide"') >= 0,
       ページ数: (t.match(/class="cl-g-step/g) || []).length
     }));
   `));
+  ok('書き出したファイルに送りアニメ用のクラスが焼き込まれない', r34.送りアニメのクラスが残らない, JSON.stringify(r34));
   ok('書き出したファイルにガイドが1ページ目・閉じた状態で入る',
      r34.開いた状態が残らない && r34.先頭ページに戻る && r34.ガイドが含まれる && r34.ページ数 === r33.総ページ数,
      JSON.stringify(r34));
