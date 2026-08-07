@@ -1,5 +1,5 @@
 <!-- ===================================================================
-     COMMENT-LAYER v2.4.1 : START
+     COMMENT-LAYER v2.5.0 : START
      HTML資料にレビューコメント機能を後付けするドロップイン・ブロック。
      この START 〜 END までを丸ごと差し替えればバージョンアップできる。
      資料側に必要な条件：
@@ -12,12 +12,40 @@
 <script id="comment-store" type="application/json">[]</script>
 
 <style id="cl-style">
-/* --- レイヤー専用の変数（資料側の :root とは名前空間が別なので衝突しない） --- */
+/* ===================================================================
+   見た目はデジタル庁デザインシステム（DADS）に合わせている。
+   資料に後付けするブロックなので外部CSSもWebフォントも読めない。
+   そこで「使う分のトークンだけを --cl-* という別名で写経」して持ち込む。
+   資料側の :root と名前がぶつからないので、どんな資料に載せても壊れない。
+   =================================================================== */
 :root{
-  --cl-w:360px;
-  --cl-accent:#E07A3F; --cl-primary:#0084A3; --cl-danger:#C4453B;
-  --cl-ink:#1e2b30; --cl-mid:#5b6b72; --cl-border:#e2e8f0; --cl-text:#334155;
-  --cl-panel:#ffffff; --cl-soft:#f8fafc;
+  --cl-w:380px;
+
+  /* --- DADS プリミティブ（使う分だけ） --- */
+  --cl-key-50:#e8f1fe;  --cl-key-100:#d9e6ff; --cl-key-200:#c5d7fb; --cl-key-300:#9db7f9;
+  --cl-key-600:#3460fb; --cl-key-800:#0031d8; --cl-key-900:#0017c1; --cl-key-1000:#00118f; --cl-key-1200:#000060;
+  --cl-gray-50:#f2f2f2; --cl-gray-100:#e6e6e6; --cl-gray-200:#cccccc; --cl-gray-300:#b3b3b3;
+  --cl-gray-400:#999999; --cl-gray-536:#767676; --cl-gray-600:#666666; --cl-gray-700:#4d4d4d;
+  --cl-gray-800:#333333; --cl-gray-900:#1a1a1a;
+  --cl-red-50:#fdeeee;  --cl-red-100:#ffdada; --cl-red-800:#ec0000; --cl-red-900:#ce0000; --cl-red-1000:#a90000;
+  --cl-orange-50:#ffeee2; --cl-orange-100:#ffdfca; --cl-orange-800:#c74700; --cl-orange-1000:#8b3200;
+  --cl-green-50:#e6f5ec; --cl-green-600:#259d63; --cl-green-800:#197a4b; --cl-green-1000:#0c472a;
+  --cl-yellow-300:#ffd43d;
+  --cl-white:#ffffff;   --cl-black:#000000;
+
+  --cl-font:"Noto Sans JP",system-ui,-apple-system,BlinkMacSystemFont,"Hiragino Sans",Meiryo,sans-serif;
+  --cl-mono:"Noto Sans Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+
+  /* --- DADS エレベーション --- */
+  --cl-elev-2:0 2px 12px 2px rgba(0,0,0,.1), 0 1px 6px 0 rgba(0,0,0,.3);
+  --cl-elev-4:0 6px 20px 4px rgba(0,0,0,.1), 0 2px 6px 0 rgba(0,0,0,.3);
+  --cl-elev-6:0 10px 30px 6px rgba(0,0,0,.1), 0 3px 12px 0 rgba(0,0,0,.3);
+
+  /* --- 役割（セマンティック） --- */
+  --cl-primary:var(--cl-key-900); --cl-primary-hover:var(--cl-key-1000); --cl-primary-active:var(--cl-key-1200);
+  --cl-danger:var(--cl-red-800);  --cl-success:var(--cl-green-800);
+  --cl-ink:var(--cl-gray-900); --cl-text:var(--cl-gray-800); --cl-mid:var(--cl-gray-600);
+  --cl-border:var(--cl-gray-200); --cl-panel:var(--cl-white); --cl-soft:var(--cl-gray-50);
 }
 
 /* --- 押し出し型レイアウト：html に padding を足すだけ。
@@ -26,221 +54,362 @@
 html.cl-open{ padding-right:var(--cl-w); }
 @media (max-width:900px){ html.cl-open{ padding-right:0; } }
 
+/* --- 資料側CSSの流し込み止め ---
+   このレイヤーは他人が書いたHTMLの中に住むので、資料側の裸のセレクタ
+   （h3{border-left:4px solid ...} や li{margin:8px} など）がそのまま効いてしまう。
+   実際にサンプル資料の h3 の飾り罫がサイドバーの見出しに乗った。
+   クラスを持たない要素だけを ID スコープ（=資料側のどの裸セレクタより強い）で潰す。
+   自前のスタイルはこの下で必ず #cl-... を付けて書き、この初期化に勝たせる。 */
+#cl-sidebar :is(h3,p,ul,ol,li,table,thead,tbody,tr,td,th,caption,kbd,figure,blockquote,label),
+#cl-guide   :is(h3,p,ul,ol,li,table,thead,tbody,tr,td,th,caption,kbd,figure,blockquote,label),
+#cl-toast   :is(p,ul,ol,li,figure,blockquote){
+  margin:0; padding:0; border:0; background:none; box-shadow:none; text-indent:0;
+  list-style:none; float:none; width:auto; max-width:none; min-width:0; text-transform:none;
+  font-family:var(--cl-font); color:inherit; text-align:inherit;
+}
+
+/* --- アイコン（絵文字は使わない。DADS と同じ 24x24 / currentColor の線画） --- */
+.cl-i{ width:20px; height:20px; flex:0 0 auto; fill:currentcolor; display:block; }
+.cl-i[data-s="16"]{ width:16px; height:16px; }
+.cl-i[data-s="18"]{ width:18px; height:18px; }
+.cl-i[data-s="22"]{ width:22px; height:22px; }
+
+/* --- DADS フォーカスリング。キーボード操作の現在地を必ず見せる --- */
+.cl-btn:focus-visible,.cl-iconbtn:focus-visible,.cl-chip:focus-visible,
+.cl-combo-btn:focus-visible,.cl-opt:focus-visible,.cl-menu-item:focus-visible,
+.cl-g-btn:focus-visible,.cl-g-dot:focus-visible,#cl-sort:focus-visible{
+  outline:3px solid var(--cl-black); outline-offset:2px;
+  box-shadow:0 0 0 2px var(--cl-yellow-300); z-index:1;
+}
+
+/* --- ボタン（DADS Button の solid-fill / outline / text を xs・sm・md で） --- */
+.cl-btn{ display:inline-flex; align-items:center; justify-content:center; column-gap:4px;
+  box-sizing:border-box; font-family:var(--cl-font); font-weight:700; line-height:1;
+  letter-spacing:.02em; cursor:pointer; text-decoration:none; border:none; background:none;
+  color:var(--cl-primary); }
+.cl-btn[data-size="md"]{ min-height:44px; border-radius:8px; padding:8px 16px; font-size:14px; }
+.cl-btn[data-size="sm"]{ min-height:36px; border-radius:6px; padding:2px 12px; font-size:13.5px; }
+.cl-btn[data-size="xs"]{ min-height:28px; border-radius:4px; padding:2px 8px;  font-size:12.5px; }
+.cl-btn[data-type="solid-fill"]{ background:var(--cl-primary); color:var(--cl-white); border:2px solid transparent; }
+.cl-btn[data-type="solid-fill"]:hover{ background:var(--cl-primary-hover); text-decoration:underline; }
+.cl-btn[data-type="solid-fill"]:active{ background:var(--cl-primary-active); }
+.cl-btn[data-type="outline"]{ background:var(--cl-white); color:var(--cl-primary); border:1px solid currentcolor; }
+.cl-btn[data-type="outline"]:hover{ background:var(--cl-key-200); color:var(--cl-primary-hover); text-decoration:underline; }
+.cl-btn[data-type="outline"]:active{ background:var(--cl-key-300); }
+.cl-btn[data-type="text"]{ background:transparent; color:var(--cl-primary); text-decoration:underline; }
+.cl-btn[data-type="text"]:hover{ background:var(--cl-key-50); text-decoration-thickness:2px; }
+.cl-btn[data-type="text"]:active{ background:var(--cl-key-100); }
+/* 削除だけは押されたくない操作なので、危険色の outline で「小さく・控えめに」置く */
+.cl-btn[data-danger]{ --cl-primary:var(--cl-danger); --cl-primary-hover:var(--cl-red-900); --cl-primary-active:var(--cl-red-1000); }
+.cl-btn[data-danger][data-type="outline"]:hover{ background:var(--cl-red-50); }
+.cl-btn[data-danger][data-type="outline"]:active{ background:var(--cl-red-100); }
+.cl-btn:disabled{ background:var(--cl-gray-300); color:var(--cl-gray-50); border-color:transparent;
+  cursor:default; text-decoration:none; }
+.cl-btn[data-type="outline"]:disabled,.cl-btn[data-type="text"]:disabled{ background:var(--cl-white); color:var(--cl-gray-300); }
+
+.cl-iconbtn{ display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px;
+  padding:0; border:none; border-radius:6px; background:transparent; color:var(--cl-gray-600);
+  cursor:pointer; font-family:var(--cl-font); }
+.cl-iconbtn:hover{ background:var(--cl-gray-100); color:var(--cl-ink); }
+.cl-iconbtn:active{ background:var(--cl-gray-200); }
+.cl-iconbtn[data-danger]:hover{ background:var(--cl-red-50); color:var(--cl-danger); }
+.cl-iconbtn.on{ background:var(--cl-key-100); color:var(--cl-primary); }
+
+/* --- ショートカットのツールチップ。
+       疑似要素なので、DOMのテキストとしては存在しない＝引用照合や自動退避を汚さない --- */
+[data-cl-tip]{ position:relative; }
+[data-cl-tip]::after{ content:attr(data-cl-tip); position:absolute; left:50%; bottom:calc(100% + 8px);
+  transform:translateX(-50%); background:var(--cl-gray-900); color:var(--cl-white);
+  font:400 12px/1.5 var(--cl-font); letter-spacing:.02em; white-space:nowrap; padding:5px 9px;
+  border-radius:6px; box-shadow:var(--cl-elev-2); opacity:0; pointer-events:none;
+  transition:opacity .12s .35s; z-index:9990; }
+[data-cl-tip][data-cl-key]::after{ content:attr(data-cl-tip) "   " attr(data-cl-key); }
+[data-cl-tip]:hover::after,[data-cl-tip]:focus-visible::after{ opacity:1; }
+[data-cl-tip][data-cl-tipdown]::after{ bottom:auto; top:calc(100% + 8px); }
+
 /* --- 本文中のハイライト（HTML用 span） --- */
-span.comment-highlight{ cursor:pointer; border-radius:2px; transition:background-color .2s, box-shadow .2s; }
+span.comment-highlight{ cursor:pointer; border-radius:2px; transition:box-shadow .2s; }
 span.comment-highlight:hover{ filter:brightness(.96); }
-span.comment-highlight.cl-active{ background-color:rgba(224,122,63,.38)!important; border-bottom-color:var(--cl-accent)!important; box-shadow:0 0 0 1px var(--cl-accent); }
+/* 選択中でも「誰の指摘か」の色は保つ。選択の表現はキーカラーのリングで行う */
+span.comment-highlight.cl-active{ box-shadow:0 0 0 2px var(--cl-key-900); filter:saturate(1.5); }
 
 /* --- 本文中のハイライト（SVG用 tspan：背景色が使えないので文字色＋下線） --- */
 tspan.comment-highlight{ cursor:pointer; }
 tspan.comment-highlight:hover{ opacity:.75; }
-tspan.comment-highlight.cl-active{ fill:var(--cl-accent)!important; text-decoration-color:var(--cl-accent)!important; font-weight:700; }
+tspan.comment-highlight.cl-active{ font-weight:700; text-decoration-thickness:3px; }
 
 /* --- ピン --- */
 #cl-pins{ position:absolute; top:0; left:0; width:100%; height:0; pointer-events:none; z-index:50; }
 .comment-pin{ position:absolute; width:28px; height:28px; border-radius:50%; border:2px solid #fff; color:#fff;
-  display:flex; align-items:center; justify-content:center; font:700 12px/1 system-ui,sans-serif;
-  cursor:grab; box-shadow:0 2px 6px rgba(0,0,0,.3); transform:translate(-50%,-100%);
+  display:flex; align-items:center; justify-content:center; font:700 12px/1 var(--cl-font);
+  cursor:grab; box-shadow:var(--cl-elev-2); transform:translate(-50%,-100%);
   user-select:none; pointer-events:auto; transition:box-shadow .15s; }
 .comment-pin:hover{ transform:translate(-50%,-100%) scale(1.1); }
 .comment-pin:active{ cursor:grabbing; }
-.comment-pin.cl-active{ box-shadow:0 0 0 3px var(--cl-accent); z-index:2; }
+.comment-pin.cl-active{ box-shadow:0 0 0 3px var(--cl-key-900); z-index:2; }
 html.cl-pinmode [data-cl-host]{ cursor:crosshair; }
 
 /* --- 選択ツールバー（position:fixed なのでスクロール計算が一切要らない） --- */
-#cl-toolbar{ position:fixed; display:none; background:var(--cl-ink); color:#fff; padding:8px 16px;
-  border-radius:6px; font:700 13px/1.4 system-ui,"Hiragino Sans","Noto Sans JP",sans-serif; cursor:pointer;
-  box-shadow:0 4px 12px rgba(0,0,0,.18); z-index:9500; transform:translate(-50%,-125%); white-space:nowrap; }
+#cl-toolbar{ position:fixed; display:none; align-items:center; gap:6px;
+  background:var(--cl-primary); color:var(--cl-white); padding:9px 14px;
+  border-radius:8px; font:700 13px/1.4 var(--cl-font); letter-spacing:.02em; cursor:pointer;
+  box-shadow:var(--cl-elev-4); z-index:9500; transform:translate(-50%,-125%); white-space:nowrap; }
 #cl-toolbar::after{ content:''; position:absolute; top:100%; left:50%; margin-left:-6px;
-  border:6px solid transparent; border-top-color:var(--cl-ink); }
+  border:6px solid transparent; border-top-color:var(--cl-primary); }
 
 /* --- サイドバー --- */
 #cl-sidebar{ position:fixed; top:0; right:0; width:var(--cl-w); height:100vh; height:100dvh;
   background:var(--cl-panel); border-left:1px solid var(--cl-border); display:none; flex-direction:column;
   z-index:9000; box-shadow:-2px 0 16px rgba(0,0,0,.06);
-  font-family:system-ui,"Hiragino Sans","Noto Sans JP",Meiryo,sans-serif; font-size:15px; line-height:1.6;
+  font-family:var(--cl-font); font-size:15px; line-height:1.7; letter-spacing:.02em;
   color:var(--cl-text); text-align:left; }
 html.cl-open #cl-sidebar{ display:flex; }
 @media (max-width:900px){ #cl-sidebar{ width:100%; } }
 
-#cl-sidebar .cl-head{ padding:14px 16px; border-bottom:1px solid var(--cl-border); display:flex;
-  justify-content:space-between; align-items:center; flex:0 0 auto; }
-#cl-sidebar .cl-head h3{ margin:0; font-size:15px; color:var(--cl-text); font-weight:700; }
-#cl-sidebar .cl-head-r{ display:flex; align-items:center; gap:6px; }
-#cl-sort{ font-size:11px; padding:3px 4px; border:1px solid var(--cl-border); border-radius:4px;
-  background:#fff; color:var(--cl-mid); cursor:pointer; font-family:inherit; }
-#cl-sidebar .cl-close{ background:none; border:none; font-size:20px; line-height:1; cursor:pointer; color:var(--cl-mid); padding:2px 6px; }
-#cl-sidebar .cl-close:hover{ color:var(--cl-ink); }
+/* 見出し行は「タイトルと閉じる」だけ。並び替えは下の道具行に降ろす
+   （タイトル・×・並び替えを1行に詰めると、性格の違う3つが同じ重みで並んでしまう） */
+#cl-sidebar .cl-head{ padding:12px 12px 12px 16px; border-bottom:1px solid var(--cl-border);
+  display:flex; justify-content:space-between; align-items:center; gap:8px; flex:0 0 auto; }
+#cl-sidebar .cl-head h3{ margin:0; font-size:17px; line-height:1.3; color:var(--cl-ink); font-weight:700; }
 
-#cl-users{ padding:12px 16px; background:var(--cl-soft); border-bottom:1px solid var(--cl-border); flex:0 0 auto; }
-#cl-users label{ font-size:11px; font-weight:700; color:var(--cl-mid); display:flex;
-  justify-content:space-between; align-items:center; margin-bottom:4px; }
-.cl-user-combo{ display:flex; align-items:center; gap:9px; background:#fff;
-  border:1px solid var(--cl-border); border-radius:9px; padding:8px 11px;
-  transition:border-color .15s, box-shadow .15s; }
-.cl-user-combo:focus-within{ border-color:var(--cl-primary); box-shadow:0 0 0 3px rgba(0,132,163,.14); }
-.cl-user-dot{ width:11px; height:11px; border-radius:50%; flex:0 0 auto;
-  box-shadow:0 0 0 2px #fff, 0 0 0 3px rgba(0,0,0,.07); }
+/* --- 操作中のユーザー：コメント領域と地続きに見えないよう、面と枠で明確に切る --- */
+#cl-users{ padding:14px 16px; background:var(--cl-key-50); border-bottom:1px solid var(--cl-key-200); flex:0 0 auto; }
+.cl-users-label{ font-size:12px; font-weight:700; color:var(--cl-gray-700); line-height:1.3;
+  display:flex; align-items:center; gap:5px; margin-bottom:6px; }
+.cl-users-row{ display:flex; align-items:stretch; gap:8px; }
+
+/* --- コンボボックス（プルダウン＋絞り込み） --- */
+.cl-combo{ position:relative; flex:1 1 auto; min-width:0; }
+.cl-combo-btn{ width:100%; display:flex; align-items:center; gap:8px; background:var(--cl-white);
+  border:1px solid var(--cl-gray-400); border-radius:8px; padding:0 8px 0 11px; min-height:40px;
+  font:700 14px/1.4 var(--cl-font); letter-spacing:.02em; color:var(--cl-ink); cursor:pointer; text-align:left; }
+.cl-combo-btn:hover{ border-color:var(--cl-primary); }
+.cl-combo.open .cl-combo-btn{ border-color:var(--cl-primary); box-shadow:0 0 0 2px var(--cl-key-200); }
+.cl-combo-name{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cl-combo-arrow{ color:var(--cl-gray-600); transition:transform .15s; }
+.cl-combo.open .cl-combo-arrow{ transform:rotate(180deg); }
+.cl-user-dot{ width:12px; height:12px; border-radius:50%; flex:0 0 auto;
+  box-shadow:0 0 0 2px #fff, 0 0 0 3px rgba(0,0,0,.12); }
+.cl-combo-pop{ position:absolute; top:calc(100% + 4px); left:0; right:0; background:var(--cl-white);
+  border:1px solid var(--cl-gray-300); border-radius:8px; box-shadow:var(--cl-elev-4); z-index:20;
+  overflow:hidden; }
+.cl-combo-search{ display:flex; align-items:center; gap:6px; padding:8px 10px;
+  border-bottom:1px solid var(--cl-border); color:var(--cl-gray-600); }
 #cl-user{ flex:1 1 auto; min-width:0; border:none; outline:none; background:transparent;
-  font:600 13.5px/1.4 inherit; color:var(--cl-text); padding:0; }
-#cl-user::placeholder{ color:#94a3b8; font-weight:400; }
-#cl-master{ display:none; background:#fff; border:1px solid var(--cl-border); border-radius:4px; padding:10px; margin-top:8px; }
+  font:400 14px/1.5 var(--cl-font); letter-spacing:.02em; color:var(--cl-text); padding:2px 0; }
+#cl-user::placeholder{ color:var(--cl-gray-400); }
+#cl-sidebar .cl-combo-list{ margin:0; padding:4px; max-height:216px; overflow-y:auto; overscroll-behavior:contain; }
+.cl-opt{ width:100%; display:flex; align-items:center; gap:8px; padding:8px 10px; border:none;
+  border-radius:6px; background:transparent; cursor:pointer; text-align:left;
+  font:400 14px/1.5 var(--cl-font); letter-spacing:.02em; color:var(--cl-text); }
+.cl-opt-name{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cl-opt.cl-opt-on{ background:var(--cl-key-100); color:var(--cl-key-1000); font-weight:700; }
+.cl-opt[aria-selected="true"] .cl-opt-check{ color:var(--cl-primary); }
+.cl-opt-check{ color:transparent; }
+.cl-combo-empty{ padding:14px 12px; font-size:13px; color:var(--cl-mid); text-align:center; }
+
+/* --- ユーザー管理パネル --- */
+#cl-master{ display:none; background:var(--cl-white); border:1px solid var(--cl-border);
+  border-radius:8px; padding:12px; margin-top:10px; }
 #cl-master.open{ display:block; }
-.cl-master-item{ display:flex; gap:6px; align-items:center; margin-bottom:6px; }
-.cl-master-item input[type=text],.cl-master-add input[type=text]{ flex:1; min-width:0; padding:4px 6px; font-size:12px;
-  border:1px solid var(--cl-border); border-radius:3px; color:var(--cl-text); background:#fff; }
-.cl-master-item input[type=color],.cl-master-add input[type=color]{ width:28px; height:26px; padding:0; border:none; cursor:pointer; border-radius:3px; background:none; flex:0 0 auto; }
-.cl-master-add{ display:flex; gap:6px; margin-top:10px; border-top:1px dashed var(--cl-border); padding-top:10px; }
-.cl-master-add button{ background:var(--cl-primary); color:#fff; border:none; border-radius:3px; padding:0 10px; cursor:pointer; font-size:11px; flex:0 0 auto; }
+.cl-master-note{ font-size:12px; line-height:1.6; color:var(--cl-mid); margin-bottom:10px; }
+.cl-master-sub{ font-size:12px; font-weight:700; color:var(--cl-gray-700); margin:0 0 6px; }
+/* 既存の行も新規の行も「色 → 名前 → 操作」の同じ並びにする。
+   色の位置が行によって左右する状態は、それだけで操作を迷わせる */
+.cl-master-item,.cl-master-add{ display:grid; grid-template-columns:28px 1fr auto; gap:8px;
+  align-items:center; margin-bottom:8px; }
+.cl-master-add{ margin:0; padding-top:12px; border-top:1px solid var(--cl-border); }
+.cl-master-item input[type=text],.cl-master-add input[type=text]{ min-width:0; padding:6px 8px;
+  font:400 13.5px/1.5 var(--cl-font); letter-spacing:.02em; border:1px solid var(--cl-gray-400);
+  border-radius:6px; color:var(--cl-text); background:var(--cl-white); }
+.cl-master-item input[type=text]:focus,.cl-master-add input[type=text]:focus{ outline:none;
+  border-color:var(--cl-primary); box-shadow:0 0 0 2px var(--cl-key-200); }
+.cl-swatch{ position:relative; width:28px; height:28px; border-radius:6px; overflow:hidden;
+  border:1px solid var(--cl-gray-300); }
+.cl-swatch input[type=color]{ position:absolute; inset:-4px; width:calc(100% + 8px); height:calc(100% + 8px);
+  padding:0; border:none; cursor:pointer; background:none; }
+.cl-master-empty{ font-size:12.5px; color:var(--cl-mid); margin-bottom:8px; }
+
+/* --- 一覧の道具行（件数と並び替え） --- */
+.cl-listbar{ display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:8px 16px; border-bottom:1px solid var(--cl-border); background:var(--cl-white); flex:0 0 auto; }
+.cl-listbar-count{ font-size:12.5px; color:var(--cl-mid); }
+.cl-sortwrap{ display:flex; align-items:center; gap:5px; color:var(--cl-gray-600); }
+#cl-sort{ font:400 12.5px/1.5 var(--cl-font); letter-spacing:.02em; padding:4px 6px;
+  border:1px solid var(--cl-gray-400); border-radius:6px; background:var(--cl-white);
+  color:var(--cl-text); cursor:pointer; }
 
 #cl-list{ flex:1 1 auto; overflow-y:auto; overscroll-behavior:contain; padding:16px; display:flex; flex-direction:column; gap:12px; }
-.cl-empty{ color:#94a3b8; font-size:13px; text-align:center; margin-top:24px; }
-.cl-item{ background:#fff; border:1px solid var(--cl-border); border-left:4px solid #ccc; border-radius:6px;
-  padding:12px; cursor:pointer; transition:box-shadow .2s, background .2s; }
-.cl-item:hover{ box-shadow:0 4px 8px rgba(0,0,0,.06); }
-.cl-item.cl-active{ border-color:var(--cl-accent)!important; background:#fffaf5; box-shadow:0 2px 8px rgba(224,122,63,.15); }
-.cl-meta{ display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--cl-mid); margin-bottom:6px; gap:6px; }
-.cl-author{ font-weight:700; color:#fff; padding:2px 6px; border-radius:4px; font-size:11px; }
-.cl-quote{ font-size:12px; color:var(--cl-mid); border-left:2px solid var(--cl-border); padding-left:8px;
-  margin-bottom:6px; background:var(--cl-soft); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-.cl-body{ font-size:13.5px; color:var(--cl-text); line-height:1.55; margin:0; white-space:pre-wrap; overflow-wrap:anywhere; }
-.cl-orphan{ font-size:11px; color:var(--cl-danger); margin-top:6px; }
-.cl-ibtn{ background:none; border:none; font-size:14px; cursor:pointer; padding:3px; border-radius:4px; opacity:.5; }
-.cl-ibtn:hover{ opacity:1; background:#f1f5f9; }
-.cl-ibtn.del:hover{ background:#fee2e2; }
-.cl-meta-l{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; min-width:0; }
-.cl-meta-r{ white-space:nowrap; flex:0 0 auto; }
+.cl-empty{ color:var(--cl-mid); font-size:13.5px; text-align:center; margin-top:28px; line-height:1.9; }
 
-/* --- 優先度ラベル（クリックで must → want → nit → なし と巡回） --- */
-.cl-label{ font:700 10px/1.4 inherit; padding:2px 6px; border-radius:4px; cursor:pointer;
-  border:1px solid transparent; letter-spacing:.02em; }
-.cl-label.must{ background:#fee2e2; color:#b91c1c; }
-.cl-label.want{ background:#fef3c7; color:#92400e; }
-.cl-label.nit{ background:#eef2f7; color:#64748b; }
-.cl-label.none{ background:none; color:#aab6c0; border-color:var(--cl-border); }
-.cl-label:hover{ filter:brightness(.95); }
+/* --- コメントカード --- */
+.cl-item{ position:relative; background:var(--cl-white); border:1px solid var(--cl-border);
+  border-left:4px solid var(--cl-gray-300); border-radius:8px;
+  padding:12px; cursor:pointer; transition:box-shadow .2s, background .2s; }
+.cl-item:hover{ box-shadow:var(--cl-elev-2); }
+.cl-item.cl-active{ border-color:var(--cl-key-900)!important; background:var(--cl-key-50);
+  box-shadow:0 0 0 2px var(--cl-key-200); }
+.cl-meta{ display:flex; justify-content:space-between; align-items:flex-start; font-size:12px;
+  color:var(--cl-mid); margin-bottom:8px; gap:6px; }
+.cl-meta-l{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; min-width:0; }
+.cl-meta-r{ position:relative; display:flex; align-items:center; gap:2px; white-space:nowrap; flex:0 0 auto; }
+.cl-author{ display:inline-flex; align-items:center; gap:5px; font-weight:700; color:var(--cl-gray-800); font-size:12.5px; }
+.cl-author-dot{ width:10px; height:10px; border-radius:50%; flex:0 0 auto; }
+.cl-when{ font-size:11.5px; color:var(--cl-gray-536); }
+.cl-quote{ font-size:12.5px; color:var(--cl-gray-700); border-left:3px solid var(--cl-gray-200); padding:4px 0 4px 8px;
+  margin-bottom:8px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.cl-quote-pin{ display:flex; align-items:center; gap:5px; border-left:none; padding-left:0;
+  color:var(--cl-mid); font-size:12px; }
+.cl-body{ font-size:14px; color:var(--cl-text); line-height:1.75; margin:0; white-space:pre-wrap; overflow-wrap:anywhere; }
+.cl-orphan{ display:flex; gap:6px; align-items:flex-start; font-size:12px; line-height:1.6;
+  color:var(--cl-orange-1000); background:var(--cl-orange-50); border-radius:6px; padding:7px 9px; margin-top:8px; }
+.cl-done-note{ display:flex; align-items:center; gap:5px; font-size:12px; color:var(--cl-green-1000); margin-top:8px; font-weight:700; }
+
+/* --- 3点リーダーのメニュー（編集・削除・完了をここに集約する） ---
+       カードの中に置く。body 直下に出すと本文テキストの走査から除外し忘れる穴が空く */
+.cl-menu{ position:absolute; top:calc(100% + 2px); right:0; min-width:168px; background:var(--cl-white);
+  border:1px solid var(--cl-gray-300); border-radius:8px; box-shadow:var(--cl-elev-4);
+  padding:4px; z-index:15; }
+.cl-menu-item{ width:100%; display:flex; align-items:center; gap:8px; padding:9px 10px; border:none;
+  border-radius:6px; background:transparent; cursor:pointer; text-align:left;
+  font:400 13.5px/1.4 var(--cl-font); letter-spacing:.02em; color:var(--cl-text); }
+.cl-menu-item:hover{ background:var(--cl-gray-50); }
+.cl-menu-item[data-danger]{ color:var(--cl-danger); }
+.cl-menu-item[data-danger]:hover{ background:var(--cl-red-50); }
+.cl-menu-sep{ height:1px; background:var(--cl-border); margin:4px 2px; }
+
+/* --- 優先度（旧「ラベル」）。クリックで 必須 → 要望 → 軽微 → なし と巡回 --- */
+.cl-chip{ display:inline-flex; align-items:center; font:700 11.5px/1.4 var(--cl-font); letter-spacing:.02em;
+  padding:2px 8px; border-radius:4px; cursor:pointer; border:1px solid transparent; }
+.cl-chip.must{ background:var(--cl-red-100); color:var(--cl-red-1000); }
+.cl-chip.want{ background:var(--cl-orange-100); color:var(--cl-orange-1000); }
+.cl-chip.nit{ background:var(--cl-gray-100); color:var(--cl-gray-700); }
+.cl-chip.none{ background:transparent; color:var(--cl-gray-536); border-color:var(--cl-gray-300); font-weight:400; }
+.cl-chip:hover{ filter:brightness(.95); }
+.cl-chip.none:hover{ background:var(--cl-gray-50); filter:none; }
 
 /* --- 完了（アーカイブせず、一覧の最下部にまとめる） --- */
-.cl-item.cl-done{ background:var(--cl-soft); opacity:.68; }
+.cl-item.cl-done{ background:var(--cl-soft); opacity:.7; }
 .cl-item.cl-done:hover{ opacity:1; }
 .cl-item.cl-done .cl-body{ color:var(--cl-mid); }
-.cl-done-note{ font-size:10.5px; color:#2f7d52; margin-top:6px; font-weight:700; }
-.cl-divider{ display:flex; align-items:center; gap:8px; font-size:11px; color:var(--cl-mid);
+.cl-divider{ display:flex; align-items:center; gap:8px; font-size:12px; color:var(--cl-mid);
   font-weight:700; margin-top:4px; }
 .cl-divider::before,.cl-divider::after{ content:''; flex:1 1 auto; height:1px; background:var(--cl-border); }
 
 /* --- 返信スレッド --- */
-.cl-replies{ margin-top:8px; border-top:1px dashed var(--cl-border); padding-top:8px;
-  display:flex; flex-direction:column; gap:8px; }
-.cl-reply{ padding-left:8px; border-left:2px solid var(--cl-border); }
-.cl-rmeta{ display:flex; align-items:center; gap:6px; font-size:10.5px; color:var(--cl-mid); margin-bottom:2px; }
-.cl-rtext{ font-size:12.5px; color:var(--cl-text); line-height:1.55; white-space:pre-wrap; overflow-wrap:anywhere; }
-.cl-reply-btn{ margin-top:8px; background:none; border:none; color:var(--cl-primary);
-  font-size:11.5px; font-weight:700; cursor:pointer; padding:2px 0; font-family:inherit; }
-.cl-reply-btn:hover{ text-decoration:underline; }
-.cl-rdraft textarea{ width:100%; min-height:56px; padding:7px; border:1px solid var(--cl-primary);
-  border-radius:4px; font:inherit; font-size:13px; resize:vertical; margin:8px 0 6px; outline:none;
-  color:var(--cl-text); background:#fff; }
+.cl-replies{ margin-top:10px; border-top:1px solid var(--cl-border); padding-top:10px;
+  display:flex; flex-direction:column; gap:10px; }
+.cl-reply{ padding-left:10px; border-left:2px solid var(--cl-gray-200); }
+.cl-rmeta{ display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--cl-mid); margin-bottom:2px; }
+.cl-rtext{ font-size:13px; color:var(--cl-text); line-height:1.7; white-space:pre-wrap; overflow-wrap:anywhere; }
+.cl-reply-btn{ margin-top:10px; }
+.cl-rdraft textarea{ width:100%; min-height:60px; padding:8px; border:1px solid var(--cl-primary);
+  border-radius:6px; font:400 13px/1.7 var(--cl-font); letter-spacing:.02em; resize:vertical;
+  margin:8px 0 8px; outline:none; color:var(--cl-text); background:#fff; }
 
-.cl-draft{ border-left-color:var(--cl-primary)!important; box-shadow:0 0 0 2px var(--cl-primary); cursor:default; }
-.cl-draft textarea{ width:100%; min-height:74px; padding:8px; border:1px solid var(--cl-primary); border-radius:4px;
-  font:inherit; font-size:13.5px; resize:vertical; margin-bottom:8px; outline:none; color:var(--cl-text); background:#fff; }
+.cl-draft{ border-left-color:var(--cl-primary)!important; box-shadow:0 0 0 2px var(--cl-key-200); cursor:default; }
+.cl-draft-head{ display:flex; align-items:center; gap:5px; font-size:12px; color:var(--cl-primary);
+  margin-bottom:8px; font-weight:700; }
+.cl-draft textarea{ width:100%; min-height:80px; padding:9px; border:1px solid var(--cl-primary); border-radius:6px;
+  font:400 14px/1.75 var(--cl-font); letter-spacing:.02em; resize:vertical; margin-bottom:10px;
+  outline:none; color:var(--cl-text); background:#fff; }
 .cl-draft-actions{ display:flex; justify-content:space-between; align-items:center; gap:8px; }
-.cl-hint{ font-size:10.5px; color:var(--cl-mid); }
-.cl-btn{ padding:6px 12px; border-radius:4px; font-size:12px; font-weight:700; cursor:pointer; border:none; }
-.cl-btn.cancel{ background:#e2e8f0; color:var(--cl-text); }
-.cl-btn.save{ background:var(--cl-primary); color:#fff; }
+.cl-draft-actions>span:last-child{ display:flex; gap:8px; }
+.cl-hint{ font-size:11px; color:var(--cl-mid); }
 
-#cl-sidebar .cl-foot{ padding:14px 16px; border-top:1px solid var(--cl-border); background:#fff; flex:0 0 auto; }
-#cl-export{ width:100%; padding:12px; background:var(--cl-ink); color:#fff; border:none; border-radius:6px;
-  font-weight:700; font-size:14px; cursor:pointer; }
-#cl-export:hover{ background:#0f172a; }
-#cl-copy{ width:100%; padding:11px; margin-bottom:8px; background:#fff; color:var(--cl-ink);
-  border:1px solid var(--cl-border); border-radius:6px; font-weight:700; font-size:13.5px; cursor:pointer; }
-#cl-copy:hover{ background:var(--cl-soft); }
+#cl-sidebar .cl-foot{ padding:12px 16px; border-top:1px solid var(--cl-border); background:#fff;
+  flex:0 0 auto; display:flex; flex-direction:column; gap:8px; }
+#cl-sidebar .cl-foot .cl-btn{ width:100%; }
 
 /* --- ドック --- */
 #cl-dock{ position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
-  background:rgba(30,43,48,.88); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
-  border-radius:30px; display:flex; align-items:center; padding:6px 8px; gap:4px;
-  box-shadow:0 8px 24px rgba(0,0,0,.18), inset 0 1px 2px rgba(255,255,255,.1); z-index:8900;
-  transition:left .25s cubic-bezier(.16,1,.3,1); font-family:system-ui,"Hiragino Sans","Noto Sans JP",sans-serif; }
+  background:rgba(26,26,26,.92); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+  border-radius:12px; display:flex; align-items:center; padding:6px; gap:4px;
+  box-shadow:var(--cl-elev-6); z-index:8900;
+  transition:left .25s cubic-bezier(.16,1,.3,1); font-family:var(--cl-font); }
 html.cl-open #cl-dock{ left:calc(50% - var(--cl-w) / 2); }
 @media (max-width:900px){ html.cl-open #cl-dock{ left:50%; } }
-.cl-dock-btn{ background:transparent; border:none; color:rgba(255,255,255,.9); border-radius:20px;
-  padding:8px 16px; font-size:13.5px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:8px; transition:background .2s; }
-.cl-dock-btn:hover{ background:rgba(255,255,255,.15); color:#fff; }
-.cl-dock-btn.on{ background:var(--cl-accent); color:#fff; box-shadow:0 2px 8px rgba(224,122,63,.4); }
-.cl-dock-sep{ width:1px; height:18px; background:rgba(255,255,255,.2); margin:0 4px; }
-#cl-badge{ background:var(--cl-accent); color:#fff; font-size:11px; font-weight:700; min-width:20px; height:20px;
-  border-radius:10px; display:none; align-items:center; justify-content:center; padding:0 5px; }
+.cl-dock-btn{ background:transparent; border:none; color:rgba(255,255,255,.92); border-radius:8px;
+  min-height:40px; padding:8px 14px; font:700 13.5px/1 var(--cl-font); letter-spacing:.02em;
+  cursor:pointer; display:flex; align-items:center; gap:7px; transition:background .2s; }
+.cl-dock-btn:hover{ background:rgba(255,255,255,.16); color:#fff; }
+.cl-dock-btn.on{ background:var(--cl-key-600); color:#fff; }
+.cl-dock-btn:focus-visible{ outline:3px solid #fff; outline-offset:2px; box-shadow:0 0 0 2px var(--cl-yellow-300); }
+.cl-dock-sep{ width:1px; height:20px; background:rgba(255,255,255,.24); margin:0 2px; }
+#cl-badge{ background:#fff; color:var(--cl-gray-900); font-size:11.5px; font-weight:700; min-width:20px; height:20px;
+  border-radius:10px; display:none; align-items:center; justify-content:center; padding:0 6px; }
 
 /* --- 使い方（ドックとは独立した左下の単独ボタン） --- */
 #cl-guide-fab{ position:fixed; bottom:24px; left:24px; z-index:8900;
-  background:rgba(30,43,48,.88); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
-  color:rgba(255,255,255,.9); border:none; border-radius:24px; padding:10px 16px; cursor:pointer;
-  display:flex; align-items:center; gap:8px; font:600 13.5px/1 system-ui,"Hiragino Sans","Noto Sans JP",sans-serif;
-  box-shadow:0 8px 24px rgba(0,0,0,.18), inset 0 1px 2px rgba(255,255,255,.1); transition:background .2s, color .2s; }
-#cl-guide-fab:hover{ background:rgba(255,255,255,.15); color:#fff; }
+  background:rgba(26,26,26,.92); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+  color:rgba(255,255,255,.92); border:none; border-radius:12px; min-height:44px; padding:10px 16px;
+  cursor:pointer; display:flex; align-items:center; gap:7px;
+  font:700 13.5px/1 var(--cl-font); letter-spacing:.02em; box-shadow:var(--cl-elev-6); transition:background .2s; }
+#cl-guide-fab:hover{ background:rgba(255,255,255,.16); color:#fff; }
+#cl-guide-fab:focus-visible{ outline:3px solid #fff; outline-offset:2px; box-shadow:0 0 0 2px var(--cl-yellow-300); }
 @media (max-width:900px){ #cl-guide-fab{ bottom:16px; left:16px; padding:9px 14px; } }
 
-/* --- 保存後などに出す軽い通知（確認は求めず、数秒で自動的に消える） --- */
-#cl-toast{ position:fixed; left:50%; bottom:96px; transform:translateX(-50%) translateY(10px);
-  max-width:min(420px, calc(100vw - 32px)); background:#fff; color:var(--cl-text);
-  border:1px solid var(--cl-border); border-radius:11px; box-shadow:0 16px 40px rgba(0,0,0,.2);
-  padding:14px 16px; font-size:13.5px; line-height:1.7; z-index:9600; opacity:0; pointer-events:none;
-  transition:opacity .2s, transform .2s; cursor:pointer;
-  font-family:system-ui,"Hiragino Sans","Noto Sans JP",Meiryo,sans-serif; text-align:left; }
+/* --- 保存後などの通知（DADS Notification Banner 準拠）。
+       保存は「押した瞬間に結果を確かめたい」操作なので、視線が向かう画面上部に出す。
+       画面最下部のトーストは、保存ボタンから遠すぎて気づかれない --- */
+#cl-toast{ position:fixed; left:50%; top:20px; transform:translateX(-50%) translateY(-8px);
+  width:min(560px, calc(100vw - 32px)); box-sizing:border-box;
+  background:var(--cl-white); color:var(--cl-gray-800);
+  border:2px solid var(--cl-success); border-radius:12px; box-shadow:var(--cl-elev-6);
+  box-shadow:inset 8px 0 0 0 var(--cl-success), var(--cl-elev-6);
+  padding:14px 18px 14px 26px; font:400 13.5px/1.8 var(--cl-font); letter-spacing:.02em;
+  z-index:9600; opacity:0; pointer-events:none; transition:opacity .2s, transform .2s;
+  cursor:pointer; text-align:left; }
 #cl-toast.show{ opacity:1; transform:translateX(-50%) translateY(0); pointer-events:auto; }
 #cl-toast strong{ color:var(--cl-ink); }
-@media (max-width:900px){ #cl-toast{ bottom:80px; } }
+html.cl-open #cl-toast{ left:calc(50% - var(--cl-w) / 2); }
+@media (max-width:900px){ html.cl-open #cl-toast{ left:50%; } }
+.cl-toast-head{ display:flex; align-items:center; gap:7px; font-weight:700; color:var(--cl-green-1000);
+  font-size:14px; margin-bottom:4px; }
 
 /* --- 使い方ガイド（押したときだけ出る。自動では絶対に出さない） --- */
 #cl-guide{ position:fixed; inset:0; z-index:9800; display:none; align-items:center; justify-content:center;
-  background:rgba(15,23,42,.5); -webkit-backdrop-filter:blur(3px); backdrop-filter:blur(3px); padding:20px;
-  font-family:system-ui,"Hiragino Sans","Noto Sans JP",Meiryo,sans-serif; color:var(--cl-text); text-align:left; }
+  background:rgba(26,26,26,.5); -webkit-backdrop-filter:blur(3px); backdrop-filter:blur(3px); padding:20px;
+  font-family:var(--cl-font); letter-spacing:.02em; color:var(--cl-text); text-align:left; }
 html.cl-guide-open #cl-guide{ display:flex; }
-.cl-g-panel{ background:#fff; border-radius:14px; width:min(660px,100%); max-height:min(90vh,780px);
-  display:flex; flex-direction:column; overflow:hidden; box-shadow:0 24px 60px rgba(0,0,0,.32); }
+/* 高さを固定する。ページごとに大きさが変わると、送るたびに「次へ」が動いて押しにくい */
+.cl-g-panel{ background:#fff; border-radius:12px; width:min(720px,100%);
+  height:min(88vh,760px); display:flex; flex-direction:column; overflow:hidden; box-shadow:var(--cl-elev-6); }
 .cl-g-head{ display:flex; justify-content:space-between; align-items:center; gap:12px;
-  padding:14px 18px; border-bottom:1px solid var(--cl-border); flex:0 0 auto; }
-.cl-g-title{ font-size:14px; font-weight:700; color:var(--cl-text); }
-.cl-g-body{ flex:1 1 auto; overflow-y:auto; overscroll-behavior:contain; padding:26px 30px 10px; }
+  padding:12px 12px 12px 20px; border-bottom:1px solid var(--cl-border); flex:0 0 auto; }
+.cl-g-title{ display:flex; align-items:center; gap:7px; font-size:15px; font-weight:700; color:var(--cl-ink); }
+.cl-g-body{ flex:1 1 auto; overflow-y:auto; overscroll-behavior:contain; padding:26px 32px 20px; }
 .cl-g-step{ display:none; }
 .cl-g-step.on{ display:block; }
-.cl-g-art{ display:block; width:100%; max-width:430px; height:auto; margin:0 auto 18px; }
-.cl-g-h{ font-size:19px; font-weight:700; color:var(--cl-ink); text-align:center; margin:0 0 10px; }
-.cl-g-lead{ font-size:14px; line-height:1.85; margin:0 0 12px; }
-.cl-g-list{ margin:0; padding-left:20px; font-size:13.5px; line-height:1.85; }
-.cl-g-list li{ margin-bottom:6px; }
-.cl-g-tip{ background:var(--cl-soft); border-left:3px solid var(--cl-primary); border-radius:0 5px 5px 0;
-  padding:10px 14px; font-size:12.5px; line-height:1.8; margin-top:14px; color:var(--cl-mid); }
+.cl-g-art{ display:block; width:100%; max-width:430px; height:auto; margin:0 auto 20px; }
+.cl-g-h{ font-size:20px; font-weight:700; line-height:1.5; color:var(--cl-ink); text-align:center; margin:0 0 12px; }
+#cl-guide .cl-g-lead{ font-size:14px; line-height:1.9; margin:0 0 14px; }
+#cl-guide .cl-g-list{ margin:0; padding-left:22px; font-size:14px; line-height:1.9; list-style:disc; }
+#cl-guide .cl-g-list li{ margin-bottom:8px; list-style:disc; }
+.cl-g-tip{ display:flex; gap:8px; background:var(--cl-key-50); border-left:4px solid var(--cl-primary);
+  border-radius:0 8px 8px 0; padding:12px 14px; font-size:13px; line-height:1.85; margin-top:16px; color:var(--cl-gray-700); }
+.cl-g-tip .cl-i{ color:var(--cl-primary); margin-top:3px; }
 .cl-g-foot{ display:flex; align-items:center; justify-content:space-between; gap:12px;
-  padding:12px 18px; border-top:1px solid var(--cl-border); background:var(--cl-soft); flex:0 0 auto; }
-.cl-g-dots{ display:flex; gap:7px; }
-.cl-g-dot{ width:7px; height:7px; padding:0; border:none; border-radius:50%; background:#cbd5e1; cursor:pointer; transition:background .2s; }
-.cl-g-dot.on{ background:var(--cl-accent); }
-.cl-g-dot:hover{ background:#94a3b8; }
+  padding:12px 20px; border-top:1px solid var(--cl-border); background:var(--cl-soft); flex:0 0 auto; }
+.cl-g-dots{ display:flex; gap:8px; }
+.cl-g-dot{ width:8px; height:8px; padding:0; border:none; border-radius:50%; background:var(--cl-gray-300); cursor:pointer; transition:background .2s; }
+.cl-g-dot.on{ background:var(--cl-primary); }
+.cl-g-dot:hover{ background:var(--cl-gray-536); }
 .cl-g-nav{ display:flex; gap:8px; }
-.cl-g-btn{ padding:7px 15px; border-radius:6px; font-size:13px; font-weight:700; cursor:pointer;
-  border:1px solid var(--cl-border); background:#fff; color:var(--cl-text); font-family:inherit; }
-.cl-g-btn:hover{ background:#f1f5f9; }
-.cl-g-btn.primary{ background:var(--cl-ink); color:#fff; border-color:var(--cl-ink); }
-.cl-g-btn.primary:hover{ background:#0f172a; }
-.cl-g-btn:disabled{ opacity:.35; cursor:default; }
-.cl-g-keys{ width:100%; border-collapse:collapse; font-size:13.5px; }
-.cl-g-keys caption{ text-align:left; font-size:11px; font-weight:700; color:var(--cl-mid);
-  padding:14px 0 6px; caption-side:top; }
-.cl-g-keys td{ padding:7px 6px; border-bottom:1px solid var(--cl-border); vertical-align:top; line-height:1.7; }
-.cl-g-keys td:first-child{ white-space:nowrap; width:1%; padding-right:16px; }
-kbd.cl-k{ display:inline-block; background:#fff; border:1px solid #cbd5e1; border-bottom-width:2px;
+#cl-guide .cl-g-keys{ width:100%; border-collapse:collapse; font-size:13.5px; }
+#cl-guide .cl-g-keys caption{ text-align:left; font-size:12px; font-weight:700; color:var(--cl-gray-700);
+  padding:16px 0 6px; caption-side:top; }
+#cl-guide .cl-g-keys td{ padding:8px 6px; border-bottom:1px solid var(--cl-border); vertical-align:top; line-height:1.8; }
+#cl-guide .cl-g-keys td:first-child{ white-space:nowrap; width:1%; padding-right:16px; }
+#cl-guide kbd.cl-k, #cl-sidebar kbd.cl-k{ display:inline-block; background:#fff; border:1px solid var(--cl-gray-300); border-bottom-width:2px;
   border-radius:4px; padding:1px 6px; margin:1px 0;
-  font:600 12px/1.7 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:var(--cl-ink); }
+  font:700 12px/1.7 var(--cl-mono); color:var(--cl-ink); }
 @media (max-width:600px){
-  .cl-g-body{ padding:20px 18px 8px; }
-  .cl-g-h{ font-size:17px; }
+  .cl-g-panel{ height:min(92vh,760px); }
+  .cl-g-body{ padding:20px 18px 12px; }
+  .cl-g-h{ font-size:18px; }
   /* 狭い画面ではキー名の折り返しを許す。nowrap のままだと表が横にはみ出す */
-  .cl-g-keys td:first-child{ white-space:normal; width:auto; padding-right:10px; }
+  #cl-guide .cl-g-keys td:first-child{ white-space:normal; width:auto; padding-right:10px; }
 }
 
 @media print{
@@ -249,63 +418,124 @@ kbd.cl-k{ display:inline-block; background:#fff; border:1px solid #cbd5e1; borde
   .comment-highlight{ background:transparent!important; border:none!important; box-shadow:none!important;
     color:inherit!important; fill:inherit!important; text-decoration:none!important; }
 }
-@media (prefers-reduced-motion:reduce){ #cl-dock,.comment-pin,.cl-item{ transition:none!important; } }
+@media (prefers-reduced-motion:reduce){ #cl-dock,.comment-pin,.cl-item,[data-cl-tip]::after{ transition:none!important; } }
 </style>
 
-<div id="cl-toolbar">💬 コメントする</div>
+<div id="cl-toolbar"><svg class="cl-i" data-s="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 14h8v-2H6v2Zm0-3h12V9H6v2Zm0-3h12V6H6v2ZM2 22V4c0-.55.196-1.02.588-1.413A1.926 1.926 0 0 1 4 2h16c.55 0 1.02.196 1.413.587C21.804 2.98 22 3.45 22 4v12c0 .55-.196 1.02-.587 1.413A1.926 1.926 0 0 1 20 18H6l-4 4Zm3.15-6H20V4H4v13.125L5.15 16Z"/></svg>コメントする</div>
 
-<aside id="cl-sidebar" aria-label="コメントスレッド">
+<aside id="cl-sidebar" aria-label="コメント">
   <div class="cl-head">
-    <h3>コメントスレッド</h3>
-    <div class="cl-head-r">
-      <select id="cl-sort" title="並び順（完了は常に最下部）">
-        <option value="updated">更新順</option>
-        <option value="doc">文書順</option>
-      </select>
-      <button class="cl-close" data-cl="close" title="閉じる（Esc）">×</button>
-    </div>
+    <h3>コメント</h3>
+    <button class="cl-iconbtn" data-cl="close" data-cl-tip="閉じる" data-cl-key="Esc" aria-label="コメント一覧を閉じる">
+      <svg class="cl-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.4 19 5 17.6 10.6 12 5 6.4 6.4 5 12 10.6 17.6 5 19 6.4 13.4 12 19 17.6 17.6 19 12 13.4 6.4 19Z"/></svg>
+    </button>
   </div>
+
   <div id="cl-users">
-    <label for="cl-user">操作中のユーザー <button class="cl-ibtn" data-cl="master" title="ユーザー設定">⚙️</button></label>
-    <div class="cl-user-combo">
-      <span id="cl-user-dot" class="cl-user-dot" aria-hidden="true"></span>
-      <input type="text" id="cl-user" list="cl-user-options" autocomplete="off" spellcheck="false"
-        placeholder="名前を入力してEnter" title="一覧から選ぶか、新しい名前を入力してEnter／⌘+Enterで決定">
-      <datalist id="cl-user-options"></datalist>
+    <div class="cl-users-label">
+      <svg class="cl-i" data-s="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12c-1.1 0-2.042-.392-2.825-1.175C8.392 10.042 8 9.1 8 8s.392-2.042 1.175-2.825C9.958 4.392 10.9 4 12 4s2.042.392 2.825 1.175C15.608 5.958 16 6.9 16 8s-.392 2.042-1.175 2.825C14.042 11.608 13.1 12 12 12Zm-8 8v-2.8c0-.567.146-1.087.438-1.563A2.91 2.91 0 0 1 5.6 14.55a14.843 14.843 0 0 1 3.15-1.163A13.76 13.76 0 0 1 12 13c1.1 0 2.183.129 3.25.387 1.067.259 2.117.646 3.15 1.163.483.25.87.612 1.162 1.087.292.476.438.996.438 1.563V20H4Zm2-2h12v-.8a.973.973 0 0 0-.5-.85c-.9-.45-1.808-.787-2.725-1.012A11.6 11.6 0 0 0 12 15c-.933 0-1.858.113-2.775.338-.917.225-1.825.562-2.725 1.012a.973.973 0 0 0-.5.85v.8Zm6-8c.55 0 1.02-.196 1.412-.588C13.804 9.021 14 8.55 14 8s-.196-1.02-.588-1.412A1.926 1.926 0 0 0 12 6c-.55 0-1.02.196-1.412.588A1.926 1.926 0 0 0 10 8c0 .55.196 1.02.588 1.412.391.392.862.588 1.412.588Z"/></svg>
+      操作中のユーザー
     </div>
+    <div class="cl-users-row">
+      <div class="cl-combo" id="cl-combo">
+        <button type="button" class="cl-combo-btn" id="cl-user-btn" aria-haspopup="listbox"
+          aria-expanded="false" aria-controls="cl-user-pop" data-cl-tip="コメントに付く名前を選ぶ" data-cl-tipdown>
+          <span id="cl-user-dot" class="cl-user-dot" aria-hidden="true"></span>
+          <span class="cl-combo-name" id="cl-user-name"></span>
+          <svg class="cl-i cl-combo-arrow" data-s="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.4 6 9.4 7.4 8l4.6 4.6L16.6 8 18 9.4l-6 6Z"/></svg>
+        </button>
+        <div class="cl-combo-pop" id="cl-user-pop" hidden>
+          <div class="cl-combo-search">
+            <svg class="cl-i" data-s="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.6 21 13.3 14.7c-.5.4-1.075.717-1.725.95-.65.233-1.342.35-2.075.35-1.817 0-3.354-.629-4.612-1.887C3.629 12.854 3 11.317 3 9.5s.629-3.354 1.888-4.613C6.146 3.629 7.683 3 9.5 3s3.354.629 4.613 1.887C15.371 6.146 16 7.683 16 9.5c0 .733-.117 1.425-.35 2.075-.233.65-.55 1.225-.95 1.725L21 19.6 19.6 21ZM9.5 14c1.25 0 2.313-.438 3.188-1.313S14 10.75 14 9.5s-.438-2.313-1.312-3.188C11.813 5.438 10.75 5 9.5 5s-2.313.438-3.188 1.312C5.438 7.187 5 8.25 5 9.5s.438 2.313 1.312 3.187C7.187 13.562 8.25 14 9.5 14Z"/></svg>
+            <input type="text" id="cl-user" autocomplete="off" spellcheck="false" role="combobox"
+              aria-autocomplete="list" aria-controls="cl-user-list" aria-expanded="true"
+              placeholder="名前で絞り込む">
+          </div>
+          <ul class="cl-combo-list" id="cl-user-list" role="listbox" aria-label="ユーザーの候補"></ul>
+          <div class="cl-combo-empty" id="cl-user-empty" hidden>該当するユーザーがいません</div>
+        </div>
+      </div>
+      <button class="cl-btn" data-type="outline" data-size="sm" data-cl="master" id="cl-master-btn"
+        aria-expanded="false" aria-controls="cl-master">
+        <svg class="cl-i" data-s="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12c-1.1 0-2.042-.392-2.825-1.175C8.392 10.042 8 9.1 8 8s.392-2.042 1.175-2.825C9.958 4.392 10.9 4 12 4s2.042.392 2.825 1.175C15.608 5.958 16 6.9 16 8s-.392 2.042-1.175 2.825C14.042 11.608 13.1 12 12 12Zm-8 8v-2.8c0-.567.146-1.087.438-1.563A2.91 2.91 0 0 1 5.6 14.55a14.843 14.843 0 0 1 3.15-1.163A13.76 13.76 0 0 1 12 13c1.1 0 2.183.129 3.25.387 1.067.259 2.117.646 3.15 1.163.483.25.87.612 1.162 1.087.292.476.438.996.438 1.563V20H4Z"/></svg>
+        ユーザーを管理
+      </button>
+    </div>
+
     <div id="cl-master">
-      <div style="font-size:11px;color:var(--cl-mid);margin-bottom:8px;">※色を変えると既存のピン・ハイライトにも即反映されます。</div>
+      <div class="cl-master-note">色を変えると、その人が書いた既存のピン・ハイライトにも即反映されます。</div>
+      <div class="cl-master-sub">登録されているユーザー</div>
       <div id="cl-master-list"></div>
+      <div class="cl-master-sub" style="margin-top:12px">新しいユーザーを追加</div>
       <div class="cl-master-add">
-        <input type="text" id="cl-new-name" placeholder="新しい名前">
-        <input type="color" id="cl-new-color" value="#0084A3">
-        <button data-cl="add-user">追加</button>
+        <span class="cl-swatch"><input type="color" id="cl-new-color" value="#008299" aria-label="新しいユーザーの色"></span>
+        <input type="text" id="cl-new-name" placeholder="名前を入力" aria-label="新しいユーザーの名前">
+        <button class="cl-btn" data-type="solid-fill" data-size="sm" data-cl="add-user"
+          data-cl-tip="追加" data-cl-key="Enter">
+          <svg class="cl-i" data-s="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 13H5v-2h6V5h2v6h6v2h-6v6h-2v-6Z"/></svg>
+          追加
+        </button>
       </div>
     </div>
   </div>
+
+  <div class="cl-listbar">
+    <span class="cl-listbar-count" id="cl-count"></span>
+    <label class="cl-sortwrap">
+      <svg class="cl-i" data-s="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18v-2h6v2H3Zm0-5v-2h12v2H3Zm0-5V6h18v2H3Z"/></svg>
+      <select id="cl-sort" aria-label="並び順（完了は常に最下部）">
+        <option value="updated">更新順</option>
+        <option value="priority">優先度順</option>
+      </select>
+    </label>
+  </div>
+
   <div id="cl-list"></div>
+
   <div class="cl-foot">
-    <button id="cl-copy" data-cl="copy" title="ショートカット: ⌘/Ctrl + Shift + C">📋 指摘をコピー</button>
-    <button id="cl-export" data-cl="export" title="ショートカット: ⌘/Ctrl + S">💾 資料を保存</button>
+    <button class="cl-btn" data-type="outline" data-size="md" id="cl-copy" data-cl="copy"
+      data-cl-tip="AIや共有先に貼れる文章にして写す" data-cl-key="⌘/Ctrl+Shift+S">
+      <svg class="cl-i" data-s="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18c-.55 0-1.02-.196-1.412-.587A1.926 1.926 0 0 1 7 16V4c0-.55.196-1.02.588-1.413A1.926 1.926 0 0 1 9 2h9c.55 0 1.02.196 1.413.587C19.804 2.98 20 3.45 20 4v12c0 .55-.196 1.02-.587 1.413A1.926 1.926 0 0 1 18 18H9Zm0-2h9V4H9v12Zm-4 6c-.55 0-1.02-.196-1.412-.587A1.926 1.926 0 0 1 3 20V6h2v14h11v2H5Z"/></svg>
+      <span class="cl-btn-label">AIに渡す指摘をコピー</span>
+    </button>
+    <button class="cl-btn" data-type="solid-fill" data-size="md" id="cl-export" data-cl="export"
+      data-cl-tip="コメントごとHTMLを書き出す" data-cl-key="⌘/Ctrl+S">
+      <svg class="cl-i" data-s="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16 7 11l1.4-1.45 2.6 2.6V4h2v8.15l2.6-2.6L17 11l-5 5Zm-6 4c-.55 0-1.02-.196-1.412-.587A1.926 1.926 0 0 1 4 18v-3h2v3h12v-3h2v3c0 .55-.196 1.02-.587 1.413A1.926 1.926 0 0 1 18 20H6Z"/></svg>
+      <span class="cl-btn-label">資料を保存</span>
+    </button>
   </div>
 </aside>
 
 <div id="cl-dock">
-  <button class="cl-dock-btn" data-cl="pinmode" title="ショートカット: C">📍 ピンを置く</button>
+  <button class="cl-dock-btn" data-cl="pinmode" data-cl-tip="画面の位置にピンを刺す" data-cl-key="C">
+    <svg class="cl-i" data-s="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12c.55 0 1.02-.196 1.412-.587C13.804 11.02 14 10.55 14 10s-.196-1.02-.588-1.412A1.926 1.926 0 0 0 12 8c-.55 0-1.02.196-1.412.588A1.926 1.926 0 0 0 10 10c0 .55.196 1.02.588 1.413.391.391.862.587 1.412.587Zm0 10c-2.683-2.283-4.687-4.404-6.012-6.363C4.663 13.679 4 11.867 4 10.2c0-2.5.804-4.492 2.413-5.975C8.02 2.742 9.883 2 12 2s3.98.742 5.588 2.225C19.196 5.708 20 7.7 20 10.2c0 1.667-.663 3.479-1.988 5.437C16.688 17.596 14.683 19.717 12 22Z"/></svg>
+    ピンを置く
+  </button>
   <div class="cl-dock-sep"></div>
-  <button class="cl-dock-btn" data-cl="toggle-sidebar">💬 コメント一覧 <span id="cl-badge">0</span></button>
+  <button class="cl-dock-btn" data-cl="toggle-sidebar" data-cl-tip="コメント一覧を開く / 閉じる" data-cl-key="L">
+    <svg class="cl-i" data-s="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 14h8v-2H6v2Zm0-3h12V9H6v2Zm0-3h12V6H6v2ZM2 22V4c0-.55.196-1.02.588-1.413A1.926 1.926 0 0 1 4 2h16c.55 0 1.02.196 1.413.587C21.804 2.98 22 3.45 22 4v12c0 .55-.196 1.02-.587 1.413A1.926 1.926 0 0 1 20 18H6l-4 4Zm3.15-6H20V4H4v13.125L5.15 16Z"/></svg>
+    コメント一覧 <span id="cl-badge">0</span>
+  </button>
 </div>
 
-<button id="cl-guide-fab" data-cl="guide" title="使い方を見る" aria-label="使い方を見る">📖 使い方</button>
+<button id="cl-guide-fab" data-cl="guide" data-cl-tip="操作のしかたを最初から見る" aria-label="使い方を見る">
+  <svg class="cl-i" data-s="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M11.95 18c.35 0 .646-.121.888-.363.241-.241.362-.537.362-.887s-.121-.646-.363-.888a1.207 1.207 0 0 0-.887-.362c-.35 0-.646.12-.888.362a1.207 1.207 0 0 0-.362.888c0 .35.12.646.362.887.242.242.538.363.888.363Zm-.9-3.85h1.85c0-.55.062-.983.187-1.3.125-.317.479-.75 1.063-1.3.433-.433.775-.846 1.025-1.238.25-.391.375-.862.375-1.412 0-.933-.342-1.65-1.025-2.15C13.837 6.25 13.033 6 12.1 6c-.95 0-1.72.25-2.312.75-.592.5-1.005 1.1-1.238 1.8l1.65.65c.083-.3.27-.625.563-.975.291-.35.737-.525 1.337-.525.533 0 .933.146 1.2.438.267.291.4.612.4.962 0 .333-.1.646-.3.938-.2.291-.45.562-.75.812-.733.65-1.183 1.142-1.35 1.475-.167.333-.25.942-.25 1.825ZM12 22a9.7 9.7 0 0 1-3.9-.79 10.1 10.1 0 0 1-5.31-5.31A9.7 9.7 0 0 1 2 12c0-1.39.26-2.69.79-3.9a10.1 10.1 0 0 1 5.31-5.31A9.7 9.7 0 0 1 12 2c1.39 0 2.69.26 3.9.79a10.1 10.1 0 0 1 5.31 5.31c.53 1.21.79 2.51.79 3.9s-.26 2.69-.79 3.9a10.1 10.1 0 0 1-5.31 5.31c-1.21.53-2.51.79-3.9.79Zm0-2c2.23 0 4.12-.78 5.67-2.33S20 14.23 20 12s-.78-4.12-2.33-5.67S14.23 4 12 4s-4.12.78-5.67 2.33S4 9.77 4 12s.78 4.12 2.33 5.67S9.77 20 12 20Z"/></svg>
+  使い方
+</button>
 
 <div id="cl-toast" role="status" aria-live="polite"></div>
 
-<!-- 使い方ガイド。開くのは左下の「📖 使い方」を押したときだけで、自動表示は一切しない -->
+<!-- 使い方ガイド。開くのは左下の「使い方」を押したときだけで、自動表示は一切しない -->
 <div id="cl-guide" role="dialog" aria-modal="true" aria-label="使い方ガイド">
  <div class="cl-g-panel">
   <div class="cl-g-head">
-    <span class="cl-g-title">📖 この資料へのコメントのしかた</span>
-    <button class="cl-close" data-cl="guide-close" title="閉じる（Esc）">×</button>
+    <span class="cl-g-title">
+      <svg class="cl-i" data-s="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M11.95 18c.35 0 .646-.121.888-.363.241-.241.362-.537.362-.887s-.121-.646-.363-.888a1.207 1.207 0 0 0-.887-.362c-.35 0-.646.12-.888.362a1.207 1.207 0 0 0-.362.888c0 .35.12.646.362.887.242.242.538.363.888.363Zm-.9-3.85h1.85c0-.55.062-.983.187-1.3.125-.317.479-.75 1.063-1.3.433-.433.775-.846 1.025-1.238.25-.391.375-.862.375-1.412 0-.933-.342-1.65-1.025-2.15C13.837 6.25 13.033 6 12.1 6c-.95 0-1.72.25-2.312.75-.592.5-1.005 1.1-1.238 1.8l1.65.65c.083-.3.27-.625.563-.975.291-.35.737-.525 1.337-.525.533 0 .933.146 1.2.438.267.291.4.612.4.962 0 .333-.1.646-.3.938-.2.291-.45.562-.75.812-.733.65-1.183 1.142-1.35 1.475-.167.333-.25.942-.25 1.825ZM12 22a9.7 9.7 0 0 1-3.9-.79 10.1 10.1 0 0 1-5.31-5.31A9.7 9.7 0 0 1 2 12c0-1.39.26-2.69.79-3.9a10.1 10.1 0 0 1 5.31-5.31A9.7 9.7 0 0 1 12 2c1.39 0 2.69.26 3.9.79a10.1 10.1 0 0 1 5.31 5.31c.53 1.21.79 2.51.79 3.9s-.26 2.69-.79 3.9a10.1 10.1 0 0 1-5.31 5.31c-1.21.53-2.51.79-3.9.79Zm0-2c2.23 0 4.12-.78 5.67-2.33S20 14.23 20 12s-.78-4.12-2.33-5.67S14.23 4 12 4s-4.12.78-5.67 2.33S4 9.77 4 12s.78 4.12 2.33 5.67S9.77 20 12 20Z"/></svg>
+      この資料へのコメントのしかた
+    </span>
+    <button class="cl-iconbtn" data-cl="guide-close" data-cl-tip="閉じる" data-cl-key="Esc" data-cl-tipdown aria-label="使い方ガイドを閉じる">
+      <svg class="cl-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.4 19 5 17.6 10.6 12 5 6.4 6.4 5 12 10.6 17.6 5 19 6.4 13.4 12 19 17.6 17.6 19 12 13.4 6.4 19Z"/></svg>
+    </button>
   </div>
 
   <div class="cl-g-body">
@@ -313,35 +543,37 @@ kbd.cl-k{ display:inline-block; background:#fff; border:1px solid #cbd5e1; borde
    <!-- 1. 全体像 -->
    <div class="cl-g-step on">
     <svg class="cl-g-art" viewBox="0 0 430 200" role="img" aria-label="資料の右側にコメント一覧が開く様子">
-      <rect x="14" y="16" width="402" height="168" rx="11" fill="#fff" stroke="#cbd5e1" stroke-width="2"/>
-      <path d="M14 44 H416" stroke="#cbd5e1" stroke-width="2"/>
-      <circle cx="32" cy="30" r="3.5" fill="#e2e8f0"/><circle cx="45" cy="30" r="3.5" fill="#e2e8f0"/><circle cx="58" cy="30" r="3.5" fill="#e2e8f0"/>
-      <rect x="36" y="60" width="150" height="9" rx="4.5" fill="#cbd5e1"/>
-      <rect x="36" y="82" width="228" height="6" rx="3" fill="#e2e8f0"/>
-      <rect x="36" y="96" width="210" height="6" rx="3" fill="#e2e8f0"/>
-      <rect x="34" y="108" width="104" height="12" rx="3" fill="#E07A3F" fill-opacity=".26"/>
-      <path d="M34 121 H138" stroke="#E07A3F" stroke-width="2"/>
-      <rect x="142" y="111" width="100" height="6" rx="3" fill="#e2e8f0"/>
-      <rect x="36" y="126" width="196" height="6" rx="3" fill="#e2e8f0"/>
-      <rect x="36" y="140" width="150" height="6" rx="3" fill="#e2e8f0"/>
-      <path d="M296 44 V184" stroke="#cbd5e1" stroke-width="2"/>
-      <rect x="296" y="44" width="120" height="140" fill="#f8fafc"/>
-      <rect x="306" y="56" width="100" height="46" rx="6" fill="#fff" stroke="#e2e8f0" stroke-width="2"/>
-      <rect x="306" y="56" width="4" height="46" rx="2" fill="#E07A3F"/>
-      <rect x="316" y="66" width="34" height="8" rx="4" fill="#0084A3"/>
-      <rect x="316" y="80" width="78" height="5" rx="2.5" fill="#e2e8f0"/>
-      <rect x="316" y="89" width="60" height="5" rx="2.5" fill="#e2e8f0"/>
-      <rect x="306" y="110" width="100" height="46" rx="6" fill="#fff" stroke="#e2e8f0" stroke-width="2"/>
-      <rect x="306" y="110" width="4" height="46" rx="2" fill="#B0483F"/>
-      <rect x="316" y="120" width="26" height="8" rx="4" fill="#B0483F"/>
-      <rect x="316" y="134" width="78" height="5" rx="2.5" fill="#e2e8f0"/>
-      <rect x="316" y="143" width="52" height="5" rx="2.5" fill="#e2e8f0"/>
-      <path d="M262 114 h26" stroke="#E07A3F" stroke-width="2" stroke-dasharray="4 4" stroke-linecap="round"/>
-      <path d="M284 109 l6 5 -6 5" fill="none" stroke="#E07A3F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-      <rect x="96" y="158" width="132" height="26" rx="13" fill="#1e2b30"/>
-      <rect x="106" y="167" width="42" height="8" rx="4" fill="#fff" fill-opacity=".65"/>
-      <rect x="158" y="167" width="58" height="8" rx="4" fill="#fff" fill-opacity=".65"/>
-      <text x="356" y="36" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#94a3b8">コメント一覧</text>
+      <rect x="14" y="16" width="402" height="168" rx="11" fill="#fff" stroke="#cccccc" stroke-width="2"/>
+      <path d="M14 44 H416" stroke="#cccccc" stroke-width="2"/>
+      <circle cx="32" cy="30" r="3.5" fill="#e6e6e6"/><circle cx="45" cy="30" r="3.5" fill="#e6e6e6"/><circle cx="58" cy="30" r="3.5" fill="#e6e6e6"/>
+      <rect x="36" y="60" width="150" height="9" rx="4.5" fill="#cccccc"/>
+      <rect x="36" y="82" width="228" height="6" rx="3" fill="#e6e6e6"/>
+      <rect x="36" y="96" width="210" height="6" rx="3" fill="#e6e6e6"/>
+      <rect x="34" y="108" width="104" height="12" rx="3" fill="#008299" fill-opacity=".22"/>
+      <path d="M34 121 H138" stroke="#008299" stroke-width="2"/>
+      <rect x="142" y="111" width="100" height="6" rx="3" fill="#e6e6e6"/>
+      <rect x="36" y="126" width="196" height="6" rx="3" fill="#e6e6e6"/>
+      <rect x="36" y="140" width="150" height="6" rx="3" fill="#e6e6e6"/>
+      <path d="M296 44 V184" stroke="#cccccc" stroke-width="2"/>
+      <rect x="296" y="44" width="120" height="140" fill="#f2f2f2"/>
+      <rect x="306" y="56" width="100" height="46" rx="6" fill="#fff" stroke="#e6e6e6" stroke-width="2"/>
+      <rect x="306" y="56" width="4" height="46" rx="2" fill="#008299"/>
+      <circle cx="320" cy="70" r="4" fill="#008299"/>
+      <rect x="329" y="66" width="34" height="7" rx="3.5" fill="#cccccc"/>
+      <rect x="316" y="80" width="78" height="5" rx="2.5" fill="#e6e6e6"/>
+      <rect x="316" y="89" width="60" height="5" rx="2.5" fill="#e6e6e6"/>
+      <rect x="306" y="110" width="100" height="46" rx="6" fill="#fff" stroke="#e6e6e6" stroke-width="2"/>
+      <rect x="306" y="110" width="4" height="46" rx="2" fill="#c74700"/>
+      <circle cx="320" cy="124" r="4" fill="#c74700"/>
+      <rect x="329" y="120" width="26" height="7" rx="3.5" fill="#cccccc"/>
+      <rect x="316" y="134" width="78" height="5" rx="2.5" fill="#e6e6e6"/>
+      <rect x="316" y="143" width="52" height="5" rx="2.5" fill="#e6e6e6"/>
+      <path d="M262 114 h26" stroke="#0017c1" stroke-width="2" stroke-dasharray="4 4" stroke-linecap="round"/>
+      <path d="M284 109 l6 5 -6 5" fill="none" stroke="#0017c1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="96" y="158" width="132" height="26" rx="8" fill="#1a1a1a"/>
+      <rect x="106" y="167" width="42" height="8" rx="4" fill="#fff" fill-opacity=".7"/>
+      <rect x="158" y="167" width="58" height="8" rx="4" fill="#fff" fill-opacity=".7"/>
+      <text x="356" y="36" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#767676">コメント一覧</text>
     </svg>
     <div class="cl-g-h">この資料は、そのまま書き込めます</div>
     <p class="cl-g-lead">アプリのインストールもログインも要りません。<strong>気づいたことをその場に書き込んで、
@@ -351,74 +583,88 @@ kbd.cl-k{ display:inline-block; background:#fff; border:1px solid #cbd5e1; borde
       <li>図やレイアウトには<strong>ピンを刺して</strong>コメントする</li>
       <li>右側の一覧で、コメントを読む・直す・完了にする</li>
     </ul>
-    <div class="cl-g-tip">画面下のバー（📍ピン・💬コメント一覧）と、左下の「📖 使い方」が入口です。閉じたり消えたりしません。</div>
+    <div class="cl-g-tip">
+      <svg class="cl-i" data-s="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 17h2v-6h-2v6Zm1-8c.283 0 .52-.096.712-.288A.968.968 0 0 0 13 8a.968.968 0 0 0-.288-.712A.968.968 0 0 0 12 7a.968.968 0 0 0-.712.288A.968.968 0 0 0 11 8c0 .283.096.52.288.712.191.192.429.288.712.288Zm0 13a9.7 9.7 0 0 1-3.9-.79 10.1 10.1 0 0 1-5.31-5.31A9.7 9.7 0 0 1 2 12c0-1.39.26-2.69.79-3.9a10.1 10.1 0 0 1 5.31-5.31A9.7 9.7 0 0 1 12 2c1.39 0 2.69.26 3.9.79a10.1 10.1 0 0 1 5.31 5.31c.53 1.21.79 2.51.79 3.9s-.26 2.69-.79 3.9a10.1 10.1 0 0 1-5.31 5.31c-1.21.53-2.51.79-3.9.79Z"/></svg>
+      <div>画面下のバー（ピンを置く・コメント一覧）と、左下の「使い方」が入口です。閉じたり消えたりしません。</div>
+    </div>
    </div>
 
    <!-- 2. 操作中のユーザー -->
    <div class="cl-g-step">
-    <svg class="cl-g-art" viewBox="0 0 430 200" role="img" aria-label="操作中のユーザーを名前で選ぶか、新しい名前を入力してEnterで決める">
-      <rect x="14" y="16" width="402" height="168" rx="11" fill="#fff" stroke="#cbd5e1" stroke-width="2"/>
-      <text x="34" y="42" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#94a3b8">操作中のユーザー</text>
-      <rect x="34" y="50" width="180" height="34" rx="9" fill="#fff" stroke="#0084A3" stroke-width="2"/>
-      <circle cx="50" cy="67" r="6" fill="#0084A3"/>
-      <text x="64" y="71" font-family="system-ui,sans-serif" font-size="12" font-weight="700" fill="#1e2b30">レビュアー1</text>
-      <rect x="34" y="90" width="180" height="64" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5"/>
-      <circle cx="50" cy="107" r="5" fill="#0084A3"/><text x="62" y="111" font-family="system-ui,sans-serif" font-size="10" fill="#5b6b72">レビュアー1</text>
-      <circle cx="50" cy="127" r="5" fill="#E07A3F"/><text x="62" y="131" font-family="system-ui,sans-serif" font-size="10" fill="#5b6b72">デザイン</text>
-      <circle cx="50" cy="147" r="5" fill="#B0483F"/><text x="62" y="151" font-family="system-ui,sans-serif" font-size="10" fill="#5b6b72">開発</text>
-      <text x="44" y="166" font-family="system-ui,sans-serif" font-size="8" fill="#94a3b8">これまでの参加者が候補に出る</text>
-      <path d="M228 67 h20" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="4 4" stroke-linecap="round"/>
-      <path d="M244 62 l6 5 -6 5" fill="none" stroke="#cbd5e1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-      <rect x="262" y="46" width="140" height="40" rx="8" fill="#fff" stroke="#E07A3F" stroke-width="2"/>
-      <text x="276" y="70" font-family="system-ui,sans-serif" font-size="12" font-weight="700" fill="#1e2b30">田中</text>
-      <text x="330" y="70" font-family="system-ui,sans-serif" font-size="8" fill="#94a3b8">（新しい名前）</text>
-      <rect x="262" y="98" width="140" height="24" rx="12" fill="#1e2b30"/>
-      <text x="332" y="114" text-anchor="middle" font-family="system-ui,sans-serif" font-size="9" font-weight="700" fill="#fff">Enter / ⌘+Enter</text>
-      <path d="M332 122 v14" stroke="#4f9e72" stroke-width="2" stroke-linecap="round"/>
-      <path d="M327 132 l5 6 5 -6" fill="none" stroke="#4f9e72" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-      <rect x="262" y="148" width="140" height="26" rx="13" fill="#4f9e72" fill-opacity=".14"/>
-      <circle cx="280" cy="161" r="6" fill="#B0483F"/>
-      <text x="292" y="165" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#1e2b30">田中に切り替わった</text>
+    <svg class="cl-g-art" viewBox="0 0 430 200" role="img" aria-label="操作中のユーザーを一覧から選ぶ。ユーザーを管理から追加もできる">
+      <rect x="14" y="16" width="402" height="168" rx="11" fill="#fff" stroke="#cccccc" stroke-width="2"/>
+      <text x="34" y="42" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#666666">操作中のユーザー</text>
+      <rect x="34" y="50" width="150" height="32" rx="8" fill="#fff" stroke="#0017c1" stroke-width="2"/>
+      <circle cx="50" cy="66" r="6" fill="#008299"/>
+      <text x="64" y="70" font-family="system-ui,sans-serif" font-size="12" font-weight="700" fill="#1a1a1a">レビュアー1</text>
+      <path d="M166 63 l5 5 5 -5" fill="none" stroke="#666666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="192" y="50" width="106" height="32" rx="8" fill="#fff" stroke="#0017c1" stroke-width="1.5"/>
+      <text x="245" y="70" text-anchor="middle" font-family="system-ui,sans-serif" font-size="11" font-weight="700" fill="#0017c1">ユーザーを管理</text>
+      <rect x="34" y="90" width="150" height="86" rx="8" fill="#fff" stroke="#b3b3b3" stroke-width="1.5"/>
+      <rect x="42" y="98" width="134" height="20" rx="5" fill="#f2f2f2"/>
+      <circle cx="54" cy="108" r="4" fill="none" stroke="#767676" stroke-width="1.5"/>
+      <path d="M57 111 l4 4" stroke="#767676" stroke-width="1.5" stroke-linecap="round"/>
+      <text x="66" y="112" font-family="system-ui,sans-serif" font-size="9" fill="#999999">名前で絞り込む</text>
+      <rect x="40" y="124" width="138" height="18" rx="5" fill="#d9e6ff"/>
+      <circle cx="52" cy="133" r="5" fill="#008299"/><text x="64" y="137" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#00118f">レビュアー1</text>
+      <circle cx="52" cy="152" r="5" fill="#c74700"/><text x="64" y="156" font-family="system-ui,sans-serif" font-size="10" fill="#4d4d4d">デザイン</text>
+      <circle cx="52" cy="169" r="5" fill="#5c10be"/><text x="64" y="173" font-family="system-ui,sans-serif" font-size="10" fill="#4d4d4d">開発</text>
+      <g fill="none" stroke="#0017c1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="200" y="100" width="26" height="26" rx="6"/>
+        <path d="M213 107 v12 M207 113 h12"/>
+      </g>
+      <text x="234" y="117" font-family="system-ui,sans-serif" font-size="10" fill="#4d4d4d">上下 / 左右キーで選ぶ</text>
+      <rect x="200" y="136" width="88" height="22" rx="6" fill="#1a1a1a"/>
+      <text x="244" y="151" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10" font-weight="700" fill="#fff">Enter</text>
+      <text x="296" y="151" font-family="system-ui,sans-serif" font-size="10" fill="#4d4d4d">で決定</text>
+      <text x="200" y="176" font-family="system-ui,sans-serif" font-size="9" fill="#767676">一覧にいない人は「ユーザーを管理」から追加</text>
     </svg>
     <div class="cl-g-h">まず、操作中のユーザーを選ぶ</div>
-    <p class="cl-g-lead">サイドバー上部の「操作中のユーザー」欄が、<strong>これから書くコメント・返信につく名前と色</strong>です。
+    <p class="cl-g-lead">サイドバー上部の「操作中のユーザー」が、<strong>これから書くコメント・返信につく名前と色</strong>です。
     書く前に、自分の名前になっているか確かめてください。</p>
     <ul class="cl-g-list">
-      <li>欄を押すと<strong>これまでの参加者が候補に出ます</strong>。選んで確定すれば、その人に切り替わります</li>
-      <li>候補にない名前を打ち込んで確定すると、<strong>その場で新しい参加者として追加</strong>されます（作り直しは不要）</li>
-      <li>確定は <kbd class="cl-k">Enter</kbd> または <kbd class="cl-k">⌘</kbd>／<kbd class="cl-k">Ctrl</kbd> + <kbd class="cl-k">Enter</kbd>。
-        <kbd class="cl-k">Esc</kbd> か他の場所を押すと、確定せずに元の名前へ戻ります</li>
+      <li>欄を押すと<strong>登録済みのユーザーが一覧で出ます</strong>。人数が多いときは<strong>名前を打って絞り込め</strong>ます</li>
+      <li><kbd class="cl-k">↑</kbd><kbd class="cl-k">←</kbd> で1つ上、<kbd class="cl-k">↓</kbd><kbd class="cl-k">→</kbd> で1つ下。
+        <kbd class="cl-k">Enter</kbd> で決定、<kbd class="cl-k">Esc</kbd> で取り消し。マウスを重ねればそれが優先されます</li>
+      <li>一覧にない人は、<strong>「ユーザーを管理」</strong>を押して名前と色を決めて<strong>追加</strong>します
+        （<kbd class="cl-k">Enter</kbd> でも追加できます）</li>
     </ul>
-    <div class="cl-g-tip">レビュアーの色を変えたいときは、欄の右の⚙️から。色を変えると、その人が過去に書いたハイライトにも即反映されます。</div>
+    <div class="cl-g-tip">
+      <svg class="cl-i" data-s="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 17h2v-6h-2v6Zm1-8c.283 0 .52-.096.712-.288A.968.968 0 0 0 13 8a.968.968 0 0 0-.288-.712A.968.968 0 0 0 12 7a.968.968 0 0 0-.712.288A.968.968 0 0 0 11 8c0 .283.096.52.288.712.191.192.429.288.712.288Zm0 13a9.7 9.7 0 0 1-3.9-.79 10.1 10.1 0 0 1-5.31-5.31A9.7 9.7 0 0 1 2 12c0-1.39.26-2.69.79-3.9a10.1 10.1 0 0 1 5.31-5.31A9.7 9.7 0 0 1 12 2c1.39 0 2.69.26 3.9.79a10.1 10.1 0 0 1 5.31 5.31c.53 1.21.79 2.51.79 3.9s-.26 2.69-.79 3.9a10.1 10.1 0 0 1-5.31 5.31c-1.21.53-2.51.79-3.9.79Z"/></svg>
+      <div>「ユーザーを管理」では、名前の変更・色の変更・削除もできます。色を変えると、その人が過去に書いたハイライトにも即反映されます。</div>
+    </div>
    </div>
 
    <!-- 3. テキストにコメント -->
    <div class="cl-g-step">
     <svg class="cl-g-art" viewBox="0 0 430 200" role="img" aria-label="本文をドラッグ選択するとコメントボタンが出る">
-      <rect x="14" y="16" width="402" height="168" rx="11" fill="#fff" stroke="#cbd5e1" stroke-width="2"/>
-      <rect x="40" y="44" width="150" height="8" rx="4" fill="#cbd5e1"/>
-      <rect x="40" y="68" width="300" height="6" rx="3" fill="#e2e8f0"/>
-      <rect x="38" y="86" width="176" height="15" rx="3" fill="#E07A3F" fill-opacity=".3"/>
-      <rect x="218" y="90" width="120" height="6" rx="3" fill="#e2e8f0"/>
-      <rect x="40" y="110" width="268" height="6" rx="3" fill="#e2e8f0"/>
+      <rect x="14" y="16" width="402" height="168" rx="11" fill="#fff" stroke="#cccccc" stroke-width="2"/>
+      <rect x="40" y="44" width="150" height="8" rx="4" fill="#cccccc"/>
+      <rect x="40" y="68" width="300" height="6" rx="3" fill="#e6e6e6"/>
+      <rect x="38" y="86" width="176" height="15" rx="3" fill="#008299" fill-opacity=".26"/>
+      <rect x="218" y="90" width="120" height="6" rx="3" fill="#e6e6e6"/>
+      <rect x="40" y="110" width="268" height="6" rx="3" fill="#e6e6e6"/>
       <g>
-        <rect x="66" y="126" width="124" height="26" rx="6" fill="#1e2b30"/>
-        <path d="M122 152 l6 9 6 -9 z" fill="#1e2b30"/>
-        <text x="128" y="143" text-anchor="middle" font-family="system-ui,sans-serif" font-size="12" font-weight="700" fill="#fff">💬 コメントする</text>
+        <rect x="66" y="126" width="124" height="26" rx="8" fill="#0017c1"/>
+        <path d="M122 152 l6 9 6 -9 z" fill="#0017c1"/>
+        <g transform="translate(76,133) scale(0.58)" fill="#fff">
+          <path d="M6 14h8v-2H6v2Zm0-3h12V9H6v2Zm0-3h12V6H6v2ZM2 22V4c0-.55.196-1.02.588-1.413A1.926 1.926 0 0 1 4 2h16c.55 0 1.02.196 1.413.587C21.804 2.98 22 3.45 22 4v12c0 .55-.196 1.02-.587 1.413A1.926 1.926 0 0 1 20 18H6l-4 4Z"/>
+        </g>
+        <text x="136" y="143" text-anchor="middle" font-family="system-ui,sans-serif" font-size="12" font-weight="700" fill="#fff">コメントする</text>
       </g>
-      <path d="M60 82 C 90 74, 140 74, 176 82" stroke="#E07A3F" stroke-width="2" stroke-linecap="round" fill="none" stroke-dasharray="1 5"/>
-      <path d="M176 76 l0 17 4.5 -4.5 3 6.5 3 -1.5 -3 -6.5 6 0 z" fill="#fff" stroke="#5b6b72" stroke-width="1.6" stroke-linejoin="round"/>
-      <path d="M204 132 h34" stroke="#E07A3F" stroke-width="2" stroke-dasharray="4 4" stroke-linecap="round"/>
-      <path d="M234 127 l6 5 -6 5" fill="none" stroke="#E07A3F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-      <rect x="248" y="112" width="130" height="56" rx="7" fill="#fff" stroke="#0084A3" stroke-width="2"/>
-      <rect x="258" y="122" width="108" height="20" rx="4" fill="#f1f5f9"/>
-      <text x="264" y="136" font-family="system-ui,sans-serif" font-size="10" fill="#94a3b8">コメントを入力…</text>
-      <rect x="300" y="150" width="66" height="12" rx="6" fill="#0084A3"/>
-      <text x="333" y="159" text-anchor="middle" font-family="system-ui,sans-serif" font-size="8" font-weight="700" fill="#fff">保存</text>
-      <text x="258" y="159" font-family="system-ui,sans-serif" font-size="8" fill="#94a3b8">⌘+Enter</text>
+      <path d="M60 82 C 90 74, 140 74, 176 82" stroke="#008299" stroke-width="2" stroke-linecap="round" fill="none" stroke-dasharray="1 5"/>
+      <path d="M176 76 l0 17 4.5 -4.5 3 6.5 3 -1.5 -3 -6.5 6 0 z" fill="#fff" stroke="#4d4d4d" stroke-width="1.6" stroke-linejoin="round"/>
+      <path d="M204 132 h34" stroke="#0017c1" stroke-width="2" stroke-dasharray="4 4" stroke-linecap="round"/>
+      <path d="M234 127 l6 5 -6 5" fill="none" stroke="#0017c1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="248" y="112" width="130" height="56" rx="8" fill="#fff" stroke="#0017c1" stroke-width="2"/>
+      <rect x="258" y="122" width="108" height="20" rx="5" fill="#f2f2f2"/>
+      <text x="264" y="136" font-family="system-ui,sans-serif" font-size="10" fill="#999999">コメントを入力…</text>
+      <rect x="300" y="150" width="66" height="13" rx="6" fill="#0017c1"/>
+      <text x="333" y="160" text-anchor="middle" font-family="system-ui,sans-serif" font-size="8" font-weight="700" fill="#fff">保存</text>
+      <text x="258" y="160" font-family="ui-monospace,monospace" font-size="8" fill="#767676">⌘+Enter</text>
     </svg>
-    <div class="cl-g-h">本文を選ぶ → 💬 コメントする</div>
-    <p class="cl-g-lead">気になった<strong>文をマウスでなぞって選ぶ</strong>と、すぐ上に「💬 コメントする」が出ます。
+    <div class="cl-g-h">本文を選ぶ → 「コメントする」</div>
+    <p class="cl-g-lead">気になった<strong>文をマウスでなぞって選ぶ</strong>と、すぐ上に「コメントする」が出ます。
     押すと右側に入力欄が開くので、書いて <kbd class="cl-k">⌘</kbd>／<kbd class="cl-k">Ctrl</kbd> +
     <kbd class="cl-k">Enter</kbd>（または「保存」）。</p>
     <ul class="cl-g-list">
@@ -426,327 +672,370 @@ kbd.cl-k{ display:inline-block; background:#fff; border:1px solid #cbd5e1; borde
       <li>色の付いた箇所を<strong>クリック</strong>すると、その指摘が一覧で光ります</li>
       <li>逆に一覧のカードをクリックすると、本文がその場所まで動きます</li>
     </ul>
-    <div class="cl-g-tip">選び直したいときは、もう一度別の場所をなぞるだけ。間違えて保存しても ✏️ で直せます。</div>
+    <div class="cl-g-tip">
+      <svg class="cl-i" data-s="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 17h2v-6h-2v6Zm1-8c.283 0 .52-.096.712-.288A.968.968 0 0 0 13 8a.968.968 0 0 0-.288-.712A.968.968 0 0 0 12 7a.968.968 0 0 0-.712.288A.968.968 0 0 0 11 8c0 .283.096.52.288.712.191.192.429.288.712.288Zm0 13a9.7 9.7 0 0 1-3.9-.79 10.1 10.1 0 0 1-5.31-5.31A9.7 9.7 0 0 1 2 12c0-1.39.26-2.69.79-3.9a10.1 10.1 0 0 1 5.31-5.31A9.7 9.7 0 0 1 12 2c1.39 0 2.69.26 3.9.79a10.1 10.1 0 0 1 5.31 5.31c.53 1.21.79 2.51.79 3.9s-.26 2.69-.79 3.9a10.1 10.1 0 0 1-5.31 5.31c-1.21.53-2.51.79-3.9.79Z"/></svg>
+      <div>選び直したいときは、もう一度別の場所をなぞるだけ。間違えて保存しても、カード右上の「…」から編集できます。</div>
+    </div>
    </div>
 
    <!-- 4. ピン -->
    <div class="cl-g-step">
     <svg class="cl-g-art" viewBox="0 0 430 200" role="img" aria-label="図の上をクリックしてピンを刺す">
-      <rect x="14" y="16" width="402" height="168" rx="11" fill="#fff" stroke="#cbd5e1" stroke-width="2"/>
-      <rect x="42" y="40" width="120" height="7" rx="3.5" fill="#cbd5e1"/>
-      <rect x="42" y="62" width="222" height="98" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2"/>
-      <rect x="66" y="112" width="26" height="34" rx="3" fill="#cbd5e1"/>
-      <rect x="102" y="92" width="26" height="54" rx="3" fill="#cbd5e1"/>
-      <rect x="138" y="76" width="26" height="70" rx="3" fill="#0084A3" fill-opacity=".55"/>
-      <rect x="174" y="100" width="26" height="46" rx="3" fill="#cbd5e1"/>
-      <text x="56" y="156" font-family="system-ui,sans-serif" font-size="10" fill="#94a3b8">図・グラフ・レイアウト</text>
-      <path d="M151 46 v14 M144 53 h14" stroke="#E07A3F" stroke-width="2" stroke-linecap="round"/>
+      <rect x="14" y="16" width="402" height="168" rx="11" fill="#fff" stroke="#cccccc" stroke-width="2"/>
+      <rect x="42" y="40" width="120" height="7" rx="3.5" fill="#cccccc"/>
+      <rect x="42" y="62" width="222" height="98" rx="8" fill="#f2f2f2" stroke="#e6e6e6" stroke-width="2"/>
+      <rect x="66" y="112" width="26" height="34" rx="3" fill="#cccccc"/>
+      <rect x="102" y="92" width="26" height="54" rx="3" fill="#cccccc"/>
+      <rect x="138" y="76" width="26" height="70" rx="3" fill="#008299" fill-opacity=".55"/>
+      <rect x="174" y="100" width="26" height="46" rx="3" fill="#cccccc"/>
+      <text x="56" y="156" font-family="system-ui,sans-serif" font-size="10" fill="#767676">図・グラフ・レイアウト</text>
+      <path d="M151 46 v14 M144 53 h14" stroke="#0017c1" stroke-width="2" stroke-linecap="round"/>
       <g>
-        <circle cx="151" cy="76" r="15" fill="#0084A3" stroke="#fff" stroke-width="3"/>
+        <circle cx="151" cy="76" r="15" fill="#008299" stroke="#fff" stroke-width="3"/>
         <text x="151" y="81" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" font-weight="700" fill="#fff">レ</text>
-        <path d="M151 91 l0 8" stroke="#0084A3" stroke-width="2" stroke-linecap="round"/>
+        <path d="M151 91 l0 8" stroke="#008299" stroke-width="2" stroke-linecap="round"/>
       </g>
-      <path d="M276 104 h24" stroke="#E07A3F" stroke-width="2" stroke-dasharray="4 4" stroke-linecap="round"/>
-      <path d="M296 99 l6 5 -6 5" fill="none" stroke="#E07A3F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-      <rect x="310" y="76" width="90" height="56" rx="7" fill="#fff" stroke="#e2e8f0" stroke-width="2"/>
-      <rect x="310" y="76" width="4" height="56" rx="2" fill="#0084A3"/>
-      <text x="322" y="94" font-family="system-ui,sans-serif" font-size="9" fill="#94a3b8">📍 画面へのピン留め</text>
-      <rect x="322" y="102" width="66" height="5" rx="2.5" fill="#e2e8f0"/>
-      <rect x="322" y="112" width="52" height="5" rx="2.5" fill="#e2e8f0"/>
-      <rect x="112" y="160" width="132" height="24" rx="12" fill="#1e2b30"/>
-      <rect x="118" y="164" width="62" height="16" rx="8" fill="#E07A3F"/>
-      <text x="149" y="176" text-anchor="middle" font-family="system-ui,sans-serif" font-size="9" font-weight="700" fill="#fff">📍 ピンを置く</text>
-      <rect x="188" y="168" width="48" height="8" rx="4" fill="#fff" fill-opacity=".5"/>
+      <path d="M276 104 h24" stroke="#0017c1" stroke-width="2" stroke-dasharray="4 4" stroke-linecap="round"/>
+      <path d="M296 99 l6 5 -6 5" fill="none" stroke="#0017c1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="310" y="76" width="90" height="56" rx="8" fill="#fff" stroke="#e6e6e6" stroke-width="2"/>
+      <rect x="310" y="76" width="4" height="56" rx="2" fill="#008299"/>
+      <g transform="translate(320,86) scale(0.5)" fill="#767676">
+        <path d="M12 12c.55 0 1.02-.196 1.412-.587C13.804 11.02 14 10.55 14 10s-.196-1.02-.588-1.412A1.926 1.926 0 0 0 12 8c-.55 0-1.02.196-1.412.588A1.926 1.926 0 0 0 10 10c0 .55.196 1.02.588 1.413.391.391.862.587 1.412.587Zm0 10c-2.683-2.283-4.687-4.404-6.012-6.363C4.663 13.679 4 11.867 4 10.2c0-2.5.804-4.492 2.413-5.975C8.02 2.742 9.883 2 12 2s3.98.742 5.588 2.225C19.196 5.708 20 7.7 20 10.2c0 1.667-.663 3.479-1.988 5.437C16.688 17.596 14.683 19.717 12 22Z"/>
+      </g>
+      <text x="334" y="94" font-family="system-ui,sans-serif" font-size="9" fill="#767676">画面へのピン留め</text>
+      <rect x="322" y="104" width="66" height="5" rx="2.5" fill="#e6e6e6"/>
+      <rect x="322" y="114" width="52" height="5" rx="2.5" fill="#e6e6e6"/>
+      <rect x="112" y="160" width="132" height="24" rx="8" fill="#1a1a1a"/>
+      <rect x="118" y="164" width="62" height="16" rx="6" fill="#3460fb"/>
+      <text x="149" y="176" text-anchor="middle" font-family="system-ui,sans-serif" font-size="9" font-weight="700" fill="#fff">ピンを置く</text>
+      <rect x="188" y="168" width="48" height="8" rx="4" fill="#fff" fill-opacity=".55"/>
     </svg>
-    <div class="cl-g-h">図やレイアウトには 📍 ピンを刺す</div>
+    <div class="cl-g-h">図やレイアウトには、ピンを刺す</div>
     <p class="cl-g-lead">「この図の並びが分かりにくい」「ここに余白がほしい」など、
     <strong>文字ではなく場所そのものへの指摘</strong>はピンで示します。</p>
     <ul class="cl-g-list">
-      <li>下のバーの「📍 ピンを置く」（または <kbd class="cl-k">C</kbd>）を押す</li>
+      <li>下のバーの「ピンを置く」（または <kbd class="cl-k">C</kbd>）を押す</li>
       <li>資料の<strong>刺したい場所をクリック</strong>すると、そこに丸いピンが立つ</li>
       <li>コメントを書いて保存。ピンは<strong>あとからドラッグして動かせます</strong></li>
     </ul>
-    <div class="cl-g-tip">ピンをやめたいときは、もう一度「📍 ピンを置く」を押すか <kbd class="cl-k">Esc</kbd>。</div>
+    <div class="cl-g-tip">
+      <svg class="cl-i" data-s="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 17h2v-6h-2v6Zm1-8c.283 0 .52-.096.712-.288A.968.968 0 0 0 13 8a.968.968 0 0 0-.288-.712A.968.968 0 0 0 12 7a.968.968 0 0 0-.712.288A.968.968 0 0 0 11 8c0 .283.096.52.288.712.191.192.429.288.712.288Zm0 13a9.7 9.7 0 0 1-3.9-.79 10.1 10.1 0 0 1-5.31-5.31A9.7 9.7 0 0 1 2 12c0-1.39.26-2.69.79-3.9a10.1 10.1 0 0 1 5.31-5.31A9.7 9.7 0 0 1 12 2c1.39 0 2.69.26 3.9.79a10.1 10.1 0 0 1 5.31 5.31c.53 1.21.79 2.51.79 3.9s-.26 2.69-.79 3.9a10.1 10.1 0 0 1-5.31 5.31c-1.21.53-2.51.79-3.9.79Z"/></svg>
+      <div>ピンをやめたいときは、もう一度「ピンを置く」を押すか <kbd class="cl-k">Esc</kbd>。</div>
+    </div>
    </div>
 
-   <!-- 5. 完了 -->
+   <!-- 5. 完了と「…」メニュー -->
    <div class="cl-g-step">
-    <svg class="cl-g-art" viewBox="0 0 430 200" role="img" aria-label="完了にするとカードが一覧の一番下へ移る">
-      <rect x="112" y="10" width="206" height="60" rx="7" fill="#fff" stroke="#e2e8f0" stroke-width="2"/>
-      <rect x="112" y="10" width="4" height="60" rx="2" fill="#0084A3"/>
-      <rect x="126" y="22" width="40" height="10" rx="5" fill="#0084A3"/>
-      <rect x="172" y="22" width="30" height="10" rx="3" fill="#fee2e2"/>
-      <text x="187" y="30" text-anchor="middle" font-family="system-ui,sans-serif" font-size="7" font-weight="700" fill="#b91c1c">must</text>
-      <rect x="126" y="42" width="150" height="5" rx="2.5" fill="#e2e8f0"/>
-      <rect x="126" y="53" width="110" height="5" rx="2.5" fill="#e2e8f0"/>
-      <g>
-        <circle cx="290" cy="27" r="17" fill="#E07A3F" fill-opacity=".14"/>
-        <circle cx="290" cy="27" r="11" fill="#4f9e72"/>
-        <path d="M285 27 l4 4 7 -8" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <svg class="cl-g-art" viewBox="0 0 430 200" role="img" aria-label="完了にするとカードが一覧の一番下へ移る。編集と削除は3点リーダーにまとまっている">
+      <rect x="86" y="10" width="206" height="60" rx="8" fill="#fff" stroke="#e6e6e6" stroke-width="2"/>
+      <rect x="86" y="10" width="4" height="60" rx="2" fill="#008299"/>
+      <circle cx="104" cy="27" r="5" fill="#008299"/>
+      <rect x="114" y="23" width="36" height="8" rx="4" fill="#cccccc"/>
+      <rect x="158" y="21" width="34" height="12" rx="4" fill="#ffdada"/>
+      <text x="175" y="30" text-anchor="middle" font-family="system-ui,sans-serif" font-size="8" font-weight="700" fill="#a90000">必須</text>
+      <rect x="100" y="42" width="150" height="5" rx="2.5" fill="#e6e6e6"/>
+      <rect x="100" y="53" width="110" height="5" rx="2.5" fill="#e6e6e6"/>
+      <g transform="translate(246,18) scale(0.85)" fill="#197a4b">
+        <path d="M10.6 16.6 17.65 9.55l-1.4-1.4-5.65 5.65-2.85-2.85-1.4 1.4 4.25 4.25ZM12 22a9.7 9.7 0 0 1-3.9-.79 10.1 10.1 0 0 1-5.31-5.31A9.7 9.7 0 0 1 2 12c0-1.39.26-2.69.79-3.9a10.1 10.1 0 0 1 5.31-5.31A9.7 9.7 0 0 1 12 2c1.39 0 2.69.26 3.9.79a10.1 10.1 0 0 1 5.31 5.31c.53 1.21.79 2.51.79 3.9s-.26 2.69-.79 3.9a10.1 10.1 0 0 1-5.31 5.31c-1.21.53-2.51.79-3.9.79Zm0-2c2.23 0 4.12-.78 5.67-2.33S20 14.23 20 12s-.78-4.12-2.33-5.67S14.23 4 12 4s-4.12.78-5.67 2.33S4 9.77 4 12s.78 4.12 2.33 5.67S9.77 20 12 20Z"/>
       </g>
-      <path d="M330 34 C 372 44, 372 108, 330 122" stroke="#4f9e72" stroke-width="2" fill="none" stroke-dasharray="5 5" stroke-linecap="round"/>
-      <path d="M338 116 l-9 7 2 -11" fill="#4f9e72"/>
-      <rect x="112" y="82" width="206" height="26" rx="6" fill="#fff" stroke="#e2e8f0" stroke-width="2"/>
-      <rect x="112" y="82" width="4" height="26" rx="2" fill="#B0483F"/>
-      <rect x="126" y="92" width="130" height="5" rx="2.5" fill="#e2e8f0"/>
-      <g>
-        <path d="M112 128 h56" stroke="#e2e8f0" stroke-width="2"/>
-        <text x="215" y="132" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#94a3b8">完了済み 1件</text>
-        <path d="M262 128 h56" stroke="#e2e8f0" stroke-width="2"/>
+      <g transform="translate(268,18) scale(0.85)" fill="#666666">
+        <path d="M12 20a1.95 1.95 0 0 1-1.425-.575A1.95 1.95 0 0 1 10 18c0-.55.192-1.025.575-1.425A1.95 1.95 0 0 1 12 16c.55 0 1.025.192 1.425.575S14 17.45 14 18s-.192 1.025-.575 1.425A1.95 1.95 0 0 1 12 20Zm0-6a1.95 1.95 0 0 1-1.425-.575A1.95 1.95 0 0 1 10 12c0-.55.192-1.025.575-1.425A1.95 1.95 0 0 1 12 10c.55 0 1.025.192 1.425.575S14 11.45 14 12s-.192 1.025-.575 1.425A1.95 1.95 0 0 1 12 14Zm0-6a1.95 1.95 0 0 1-1.425-.575A1.95 1.95 0 0 1 10 6c0-.55.192-1.025.575-1.425A1.95 1.95 0 0 1 12 4c.55 0 1.025.192 1.425.575S14 5.45 14 6s-.192 1.025-.575 1.425A1.95 1.95 0 0 1 12 8Z"/>
       </g>
-      <g opacity=".55">
-        <rect x="112" y="142" width="206" height="48" rx="7" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2"/>
-        <rect x="112" y="142" width="4" height="48" rx="2" fill="#0084A3"/>
-        <rect x="126" y="152" width="40" height="10" rx="5" fill="#0084A3"/>
-        <rect x="126" y="170" width="120" height="5" rx="2.5" fill="#e2e8f0"/>
-        <text x="126" y="187" font-family="system-ui,sans-serif" font-size="8" font-weight="700" fill="#4f9e72">✅ 完了（レビュアー1）</text>
-        <circle cx="290" cy="159" r="11" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
-        <text x="290" y="163" text-anchor="middle" font-size="10">🔄</text>
+      <rect x="292" y="34" width="102" height="76" rx="8" fill="#fff" stroke="#b3b3b3" stroke-width="1.5"/>
+      <text x="308" y="55" font-family="system-ui,sans-serif" font-size="10" fill="#333333">編集</text>
+      <text x="308" y="77" font-family="system-ui,sans-serif" font-size="10" fill="#ec0000">削除</text>
+      <path d="M300 88 h86" stroke="#e6e6e6" stroke-width="1.5"/>
+      <text x="308" y="103" font-family="system-ui,sans-serif" font-size="10" fill="#333333">完了にする</text>
+      <path d="M282 30 C 290 30, 286 34, 292 40" fill="none" stroke="#b3b3b3" stroke-width="1.5" stroke-dasharray="3 3"/>
+      <path d="M258 40 C 274 60, 250 106, 210 118" stroke="#197a4b" stroke-width="2" fill="none" stroke-dasharray="5 5" stroke-linecap="round"/>
+      <path d="M218 112 l-10 6 3 -11" fill="#197a4b"/>
+      <g>
+        <path d="M64 132 h58" stroke="#e6e6e6" stroke-width="2"/>
+        <text x="160" y="136" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#767676">完了済み 1件</text>
+        <path d="M198 132 h58" stroke="#e6e6e6" stroke-width="2"/>
+      </g>
+      <g opacity=".6">
+        <rect x="64" y="146" width="192" height="44" rx="8" fill="#f2f2f2" stroke="#e6e6e6" stroke-width="2"/>
+        <rect x="64" y="146" width="4" height="44" rx="2" fill="#008299"/>
+        <circle cx="82" cy="160" r="5" fill="#008299"/>
+        <rect x="92" y="156" width="36" height="8" rx="4" fill="#cccccc"/>
+        <rect x="78" y="171" width="120" height="5" rx="2.5" fill="#e6e6e6"/>
+        <text x="78" y="187" font-family="system-ui,sans-serif" font-size="8" font-weight="700" fill="#197a4b">完了（レビュアー1）</text>
       </g>
     </svg>
-    <div class="cl-g-h">片付いた指摘は ✅ で完了にする</div>
-    <p class="cl-g-lead">直した指摘、もう見なくていい指摘はカードの <strong>✅</strong> を押します。
+    <div class="cl-g-h">片付いた指摘は「完了」にする</div>
+    <p class="cl-g-lead">直した指摘、もう見なくていい指摘は、カード右上の<strong>チェック</strong>を押します。
     <strong>消えるわけではありません。</strong>一覧の一番下、「完了済み」の区切り線の下へ移動するだけです。</p>
     <ul class="cl-g-list">
-      <li>誰がいつ完了にしたかが、カードに残ります</li>
-      <li>やっぱり戻したいときは <strong>🔄</strong> でいつでも元の位置へ</li>
-      <li>完了にしても<strong>並び順（最後に書いた時刻）は変わりません</strong></li>
+      <li><strong>チェック</strong> … 完了にする／完了を取り消す。よく使うのでボタンのまま出しています</li>
+      <li><strong>「…」（3点リーダー）</strong> … <strong>編集・削除・完了</strong>をここにまとめました。
+        めったに使わない操作で押し間違えないためです</li>
+      <li>誰がいつ完了にしたかが、カードに残ります。<strong>並び順（最後に書いた時刻）は変わりません</strong></li>
     </ul>
-    <div class="cl-g-tip">完了は「消す」ではなく「片付ける」。何を直したかの記録がそのまま残るので、
-    次の版で同じ指摘が出戻りません。</div>
+    <div class="cl-g-tip">
+      <svg class="cl-i" data-s="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 17h2v-6h-2v6Zm1-8c.283 0 .52-.096.712-.288A.968.968 0 0 0 13 8a.968.968 0 0 0-.288-.712A.968.968 0 0 0 12 7a.968.968 0 0 0-.712.288A.968.968 0 0 0 11 8c0 .283.096.52.288.712.191.192.429.288.712.288Zm0 13a9.7 9.7 0 0 1-3.9-.79 10.1 10.1 0 0 1-5.31-5.31A9.7 9.7 0 0 1 2 12c0-1.39.26-2.69.79-3.9a10.1 10.1 0 0 1 5.31-5.31A9.7 9.7 0 0 1 12 2c1.39 0 2.69.26 3.9.79a10.1 10.1 0 0 1 5.31 5.31c.53 1.21.79 2.51.79 3.9s-.26 2.69-.79 3.9a10.1 10.1 0 0 1-5.31 5.31c-1.21.53-2.51.79-3.9.79Z"/></svg>
+      <div>完了は「消す」ではなく「片付ける」。何を直したかの記録がそのまま残るので、次の版で同じ指摘が出戻りません。</div>
+    </div>
    </div>
 
-   <!-- 6. 返信とラベル -->
+   <!-- 6. 返信と優先度 -->
    <div class="cl-g-step">
-    <svg class="cl-g-art" viewBox="0 0 430 200" role="img" aria-label="コメントに返信を積み、優先度ラベルを付ける">
-      <rect x="76" y="14" width="278" height="172" rx="9" fill="#fff" stroke="#e2e8f0" stroke-width="2"/>
-      <rect x="76" y="14" width="5" height="172" rx="2.5" fill="#0084A3"/>
-      <rect x="94" y="30" width="46" height="13" rx="6.5" fill="#0084A3"/>
-      <text x="117" y="40" text-anchor="middle" font-family="system-ui,sans-serif" font-size="8" font-weight="700" fill="#fff">レビュアー1</text>
+    <svg class="cl-g-art" viewBox="0 0 430 200" role="img" aria-label="コメントに返信を積み、優先度を付ける">
+      <rect x="76" y="14" width="278" height="172" rx="9" fill="#fff" stroke="#e6e6e6" stroke-width="2"/>
+      <rect x="76" y="14" width="5" height="172" rx="2.5" fill="#008299"/>
+      <circle cx="98" cy="36" r="5" fill="#008299"/>
+      <text x="110" y="40" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#333333">レビュアー1</text>
       <g>
-        <rect x="148" y="30" width="34" height="13" rx="4" fill="#fee2e2"/>
-        <text x="165" y="40" text-anchor="middle" font-family="system-ui,sans-serif" font-size="8" font-weight="700" fill="#b91c1c">must</text>
-        <path d="M165 24 v-8" stroke="#E07A3F" stroke-width="1.6" stroke-linecap="round"/>
-        <circle cx="165" cy="14" r="2.5" fill="#E07A3F"/>
+        <rect x="172" y="28" width="34" height="14" rx="4" fill="#ffdada"/>
+        <text x="189" y="38" text-anchor="middle" font-family="system-ui,sans-serif" font-size="8" font-weight="700" fill="#a90000">必須</text>
+        <path d="M189 22 v-8" stroke="#0017c1" stroke-width="1.6" stroke-linecap="round"/>
+        <circle cx="189" cy="12" r="2.5" fill="#0017c1"/>
       </g>
-      <text x="192" y="40" font-family="system-ui,sans-serif" font-size="8" fill="#94a3b8">8月8日 10:20</text>
-      <rect x="94" y="52" width="150" height="16" rx="3" fill="#f8fafc"/>
-      <path d="M94 52 v16" stroke="#cbd5e1" stroke-width="2"/>
-      <text x="102" y="64" font-family="system-ui,sans-serif" font-size="8" fill="#94a3b8">投資回収期間は四年程度…</text>
-      <rect x="94" y="76" width="228" height="5" rx="2.5" fill="#e2e8f0"/>
-      <rect x="94" y="87" width="192" height="5" rx="2.5" fill="#e2e8f0"/>
-      <path d="M94 106 H322" stroke="#e2e8f0" stroke-width="1.5" stroke-dasharray="4 4"/>
+      <text x="214" y="39" font-family="system-ui,sans-serif" font-size="8" fill="#767676">8月8日 10:20</text>
+      <rect x="94" y="52" width="150" height="16" rx="3" fill="#f2f2f2"/>
+      <path d="M94 52 v16" stroke="#cccccc" stroke-width="2"/>
+      <text x="102" y="64" font-family="system-ui,sans-serif" font-size="8" fill="#767676">投資回収期間は四年程度…</text>
+      <rect x="94" y="76" width="228" height="5" rx="2.5" fill="#e6e6e6"/>
+      <rect x="94" y="87" width="192" height="5" rx="2.5" fill="#e6e6e6"/>
+      <path d="M94 106 H322" stroke="#e6e6e6" stroke-width="1.5"/>
       <g>
-        <path d="M104 118 v40" stroke="#cbd5e1" stroke-width="2"/>
-        <rect x="114" y="116" width="30" height="11" rx="5.5" fill="#B0483F"/>
-        <text x="129" y="125" text-anchor="middle" font-family="system-ui,sans-serif" font-size="7" font-weight="700" fill="#fff">田中</text>
-        <text x="150" y="125" font-family="system-ui,sans-serif" font-size="8" fill="#94a3b8">8月8日 14:05</text>
-        <rect x="114" y="134" width="188" height="5" rx="2.5" fill="#e2e8f0"/>
-        <rect x="114" y="145" width="140" height="5" rx="2.5" fill="#e2e8f0"/>
+        <path d="M104 118 v40" stroke="#cccccc" stroke-width="2"/>
+        <circle cx="120" cy="122" r="4" fill="#5c10be"/>
+        <text x="130" y="126" font-family="system-ui,sans-serif" font-size="8" font-weight="700" fill="#333333">田中</text>
+        <text x="158" y="126" font-family="system-ui,sans-serif" font-size="8" fill="#767676">8月8日 14:05</text>
+        <rect x="114" y="134" width="188" height="5" rx="2.5" fill="#e6e6e6"/>
+        <rect x="114" y="145" width="140" height="5" rx="2.5" fill="#e6e6e6"/>
       </g>
-      <text x="94" y="176" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#0084A3">💬 返信</text>
-      <path d="M146 172 h20" stroke="#0084A3" stroke-width="1.6" stroke-dasharray="3 3" stroke-linecap="round"/>
-      <path d="M162 168 l5 4 -5 4" fill="none" stroke="#0084A3" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-      <text x="176" y="176" font-family="system-ui,sans-serif" font-size="9" fill="#94a3b8">やりとりを積める</text>
+      <g transform="translate(90,166) scale(0.6)" fill="#0017c1">
+        <path d="M10 19v-2h5.6c.9 0 1.7-.29 2.4-.875.7-.583 1.05-1.325 1.05-2.225s-.35-1.642-1.05-2.225C17.3 11.09 16.5 10.8 15.6 10.8H7.8l2.6 2.6L9 14.8 4 9.8l5-5 1.4 1.4-2.6 2.6h7.8c1.45 0 2.7.48 3.75 1.438C20.4 11.196 20.925 12.4 20.925 13.9s-.525 2.704-1.575 3.663C18.3 18.52 17.05 19 15.6 19H10Z"/>
+      </g>
+      <text x="106" y="177" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#0017c1">返信</text>
+      <path d="M136 173 h20" stroke="#0017c1" stroke-width="1.6" stroke-dasharray="3 3" stroke-linecap="round"/>
+      <path d="M152 169 l5 4 -5 4" fill="none" stroke="#0017c1" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="166" y="177" font-family="system-ui,sans-serif" font-size="9" fill="#767676">やりとりを積める</text>
     </svg>
-    <div class="cl-g-h">返信でやりとり、ラベルで優先度</div>
+    <div class="cl-g-h">返信でやりとり、優先度で重みづけ</div>
     <p class="cl-g-lead">1つの指摘に対して「直しました」「まだ調整中です」を<strong>同じカードに積んでいけます</strong>。
     上書きしないので、経緯がそのまま残ります。</p>
     <ul class="cl-g-list">
-      <li><strong>💬 返信</strong> … カードの下から返信を追加。返信が付くとそのカードが一覧の上に上がります</li>
-      <li><strong>ラベル</strong> … 名前の横のチップをクリックするたびに
-        <strong style="color:#b91c1c">must</strong>（必ず直す）→
-        <strong style="color:#92400e">want</strong>（できれば）→
-        <strong style="color:#64748b">nit</strong>（細かい好み）→ なし と切り替わります</li>
+      <li><strong>返信</strong> … カードの下から返信を追加。返信が付くとそのカードが一覧の上に上がります</li>
+      <li><strong>優先度</strong> … 名前の横のチップをクリックするたびに
+        <strong style="color:#a90000">必須</strong>（必ず直す）→
+        <strong style="color:#8b3200">要望</strong>（できれば直す）→
+        <strong style="color:#4d4d4d">軽微</strong>（細かい好み）→ なし と切り替わります</li>
     </ul>
-    <div class="cl-g-tip">ラベルは「指摘をコピー」の出力にも入るので、AIに直させるときに優先順位が伝わります。</div>
+    <div class="cl-g-tip">
+      <svg class="cl-i" data-s="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 17h2v-6h-2v6Zm1-8c.283 0 .52-.096.712-.288A.968.968 0 0 0 13 8a.968.968 0 0 0-.288-.712A.968.968 0 0 0 12 7a.968.968 0 0 0-.712.288A.968.968 0 0 0 11 8c0 .283.096.52.288.712.191.192.429.288.712.288Zm0 13a9.7 9.7 0 0 1-3.9-.79 10.1 10.1 0 0 1-5.31-5.31A9.7 9.7 0 0 1 2 12c0-1.39.26-2.69.79-3.9a10.1 10.1 0 0 1 5.31-5.31A9.7 9.7 0 0 1 12 2c1.39 0 2.69.26 3.9.79a10.1 10.1 0 0 1 5.31 5.31c.53 1.21.79 2.51.79 3.9s-.26 2.69-.79 3.9a10.1 10.1 0 0 1-5.31 5.31c-1.21.53-2.51.79-3.9.79Z"/></svg>
+      <div>優先度は並び替えにも、コピーした文章にも入るので、AIに直させるときに「どれから直すか」が伝わります。</div>
+    </div>
    </div>
 
    <!-- 7. 並び替えとキーボード -->
    <div class="cl-g-step">
-    <svg class="cl-g-art" viewBox="0 0 430 200" role="img" aria-label="更新順と文書順の切り替え、JとKでの移動">
-      <text x="86" y="22" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#1e2b30">更新順</text>
-      <text x="230" y="22" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#1e2b30">文書順</text>
+    <svg class="cl-g-art" viewBox="0 0 430 200" role="img" aria-label="更新順と優先度順の切り替え、JとKでの移動">
+      <text x="86" y="22" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#1a1a1a">更新順</text>
+      <text x="230" y="22" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#1a1a1a">優先度順</text>
       <g>
-        <rect x="26" y="32" width="120" height="30" rx="6" fill="#fff" stroke="#e2e8f0" stroke-width="2"/>
-        <rect x="26" y="32" width="4" height="30" rx="2" fill="#B0483F"/>
-        <text x="42" y="51" font-family="system-ui,sans-serif" font-size="10" fill="#5b6b72">さっき直した指摘</text>
-        <rect x="26" y="68" width="120" height="30" rx="6" fill="#fff" stroke="#e2e8f0" stroke-width="2"/>
-        <rect x="26" y="68" width="4" height="30" rx="2" fill="#0084A3"/>
-        <text x="42" y="87" font-family="system-ui,sans-serif" font-size="10" fill="#5b6b72">返信が来た指摘</text>
-        <rect x="26" y="104" width="120" height="30" rx="6" fill="#fff" stroke="#e2e8f0" stroke-width="2"/>
-        <rect x="26" y="104" width="4" height="30" rx="2" fill="#0084A3"/>
-        <text x="42" y="123" font-family="system-ui,sans-serif" font-size="10" fill="#5b6b72">古い指摘</text>
+        <rect x="26" y="32" width="120" height="30" rx="6" fill="#fff" stroke="#e6e6e6" stroke-width="2"/>
+        <rect x="26" y="32" width="4" height="30" rx="2" fill="#c74700"/>
+        <text x="42" y="51" font-family="system-ui,sans-serif" font-size="10" fill="#4d4d4d">さっき直した指摘</text>
+        <rect x="26" y="68" width="120" height="30" rx="6" fill="#fff" stroke="#e6e6e6" stroke-width="2"/>
+        <rect x="26" y="68" width="4" height="30" rx="2" fill="#008299"/>
+        <text x="42" y="87" font-family="system-ui,sans-serif" font-size="10" fill="#4d4d4d">返信が来た指摘</text>
+        <rect x="26" y="104" width="120" height="30" rx="6" fill="#fff" stroke="#e6e6e6" stroke-width="2"/>
+        <rect x="26" y="104" width="4" height="30" rx="2" fill="#008299"/>
+        <text x="42" y="123" font-family="system-ui,sans-serif" font-size="10" fill="#4d4d4d">古い指摘</text>
       </g>
       <g>
-        <rect x="160" y="72" width="30" height="22" rx="5" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5"/>
-        <path d="M169 80 l6 6 6 -6" fill="none" stroke="#5b6b72" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M155 60 C 176 52, 176 52, 196 60" stroke="#E07A3F" stroke-width="2" fill="none" stroke-linecap="round"/>
-        <path d="M190 55 l7 4 -7 5" fill="#E07A3F"/>
+        <rect x="160" y="72" width="30" height="22" rx="5" fill="#f2f2f2" stroke="#b3b3b3" stroke-width="1.5"/>
+        <path d="M169 80 l6 6 6 -6" fill="none" stroke="#4d4d4d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M155 60 C 176 52, 176 52, 196 60" stroke="#0017c1" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <path d="M190 55 l7 4 -7 5" fill="#0017c1"/>
       </g>
       <g>
-        <rect x="204" y="32" width="120" height="30" rx="6" fill="#fff" stroke="#e2e8f0" stroke-width="2"/>
-        <rect x="204" y="32" width="4" height="30" rx="2" fill="#0084A3"/>
-        <text x="220" y="51" font-family="system-ui,sans-serif" font-size="10" fill="#5b6b72">1ページ目の指摘</text>
-        <rect x="204" y="68" width="120" height="30" rx="6" fill="#fff" stroke="#e2e8f0" stroke-width="2"/>
-        <rect x="204" y="68" width="4" height="30" rx="2" fill="#B0483F"/>
-        <text x="220" y="87" font-family="system-ui,sans-serif" font-size="10" fill="#5b6b72">中ほどの指摘</text>
-        <rect x="204" y="104" width="120" height="30" rx="6" fill="#fff" stroke="#e2e8f0" stroke-width="2"/>
-        <rect x="204" y="104" width="4" height="30" rx="2" fill="#0084A3"/>
-        <text x="220" y="123" font-family="system-ui,sans-serif" font-size="10" fill="#5b6b72">終わりの指摘</text>
+        <rect x="204" y="32" width="120" height="30" rx="6" fill="#fff" stroke="#e6e6e6" stroke-width="2"/>
+        <rect x="204" y="32" width="4" height="30" rx="2" fill="#008299"/>
+        <rect x="216" y="41" width="26" height="12" rx="4" fill="#ffdada"/>
+        <text x="229" y="50" text-anchor="middle" font-family="system-ui,sans-serif" font-size="8" font-weight="700" fill="#a90000">必須</text>
+        <text x="248" y="51" font-family="system-ui,sans-serif" font-size="10" fill="#4d4d4d">の指摘</text>
+        <rect x="204" y="68" width="120" height="30" rx="6" fill="#fff" stroke="#e6e6e6" stroke-width="2"/>
+        <rect x="204" y="68" width="4" height="30" rx="2" fill="#c74700"/>
+        <rect x="216" y="77" width="26" height="12" rx="4" fill="#ffdfca"/>
+        <text x="229" y="86" text-anchor="middle" font-family="system-ui,sans-serif" font-size="8" font-weight="700" fill="#8b3200">要望</text>
+        <text x="248" y="87" font-family="system-ui,sans-serif" font-size="10" fill="#4d4d4d">の指摘</text>
+        <rect x="204" y="104" width="120" height="30" rx="6" fill="#fff" stroke="#e6e6e6" stroke-width="2"/>
+        <rect x="204" y="104" width="4" height="30" rx="2" fill="#008299"/>
+        <rect x="216" y="113" width="26" height="12" rx="4" fill="#e6e6e6"/>
+        <text x="229" y="122" text-anchor="middle" font-family="system-ui,sans-serif" font-size="8" font-weight="700" fill="#4d4d4d">軽微</text>
+        <text x="248" y="123" font-family="system-ui,sans-serif" font-size="10" fill="#4d4d4d">の指摘</text>
       </g>
       <g>
-        <rect x="346" y="46" width="34" height="34" rx="7" fill="#fff" stroke="#cbd5e1" stroke-width="2" stroke-linejoin="round"/>
-        <text x="363" y="69" text-anchor="middle" font-family="ui-monospace,monospace" font-size="16" font-weight="700" fill="#1e2b30">K</text>
-        <path d="M394 76 v-26 M388 56 l6 -6 6 6" stroke="#0084A3" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-        <rect x="346" y="92" width="34" height="34" rx="7" fill="#fff" stroke="#cbd5e1" stroke-width="2" stroke-linejoin="round"/>
-        <text x="363" y="115" text-anchor="middle" font-family="ui-monospace,monospace" font-size="16" font-weight="700" fill="#1e2b30">J</text>
-        <path d="M394 96 v26 M388 116 l6 6 6 -6" stroke="#0084A3" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="346" y="46" width="34" height="34" rx="7" fill="#fff" stroke="#b3b3b3" stroke-width="2" stroke-linejoin="round"/>
+        <text x="363" y="69" text-anchor="middle" font-family="ui-monospace,monospace" font-size="16" font-weight="700" fill="#1a1a1a">K</text>
+        <path d="M394 76 v-26 M388 56 l6 -6 6 6" stroke="#0017c1" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="346" y="92" width="34" height="34" rx="7" fill="#fff" stroke="#b3b3b3" stroke-width="2" stroke-linejoin="round"/>
+        <text x="363" y="115" text-anchor="middle" font-family="ui-monospace,monospace" font-size="16" font-weight="700" fill="#1a1a1a">J</text>
+        <path d="M394 96 v26 M388 116 l6 6 6 -6" stroke="#0017c1" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
       </g>
       <g>
-        <path d="M26 150 H404" stroke="#e2e8f0" stroke-width="1.5" stroke-dasharray="4 4"/>
-        <text x="26" y="172" font-family="system-ui,sans-serif" font-size="10" fill="#94a3b8">完了した指摘は、どちらの並びでも いちばん下</text>
-        <rect x="330" y="162" width="74" height="14" rx="7" fill="#f1f5f9"/>
-        <text x="367" y="172" text-anchor="middle" font-family="system-ui,sans-serif" font-size="9" font-weight="700" fill="#94a3b8">完了済み</text>
+        <path d="M26 150 H404" stroke="#e6e6e6" stroke-width="1.5"/>
+        <text x="26" y="172" font-family="system-ui,sans-serif" font-size="10" fill="#767676">完了した指摘は、どちらの並びでも いちばん下</text>
+        <rect x="330" y="162" width="74" height="14" rx="7" fill="#f2f2f2"/>
+        <text x="367" y="172" text-anchor="middle" font-family="system-ui,sans-serif" font-size="9" font-weight="700" fill="#767676">完了済み</text>
       </g>
     </svg>
     <div class="cl-g-h">並び順を変える／キーで見て回る</div>
-    <p class="cl-g-lead">一覧の右上のセレクタで、コメントの並びを切り替えられます。</p>
+    <p class="cl-g-lead">一覧の上にあるセレクタで、コメントの並びを切り替えられます。</p>
     <ul class="cl-g-list">
       <li><strong>更新順</strong>（初期設定）… 最後に書いた・返信したものが上。<strong>いま動いている話</strong>を追うとき</li>
-      <li><strong>文書順</strong> … 資料の上から順。<strong>頭から通して読む</strong>とき</li>
+      <li><strong>優先度順</strong> … 必須 → 要望 → 軽微 → なし の順。<strong>重い指摘から片付ける</strong>とき</li>
       <li>並び順を変えても資料は変わりません。あなたの画面での見え方だけが変わります</li>
     </ul>
     <p class="cl-g-lead"><kbd class="cl-k">J</kbd> で次のコメント、<kbd class="cl-k">K</kbd> で前のコメントへ。
     本文も一緒に動くので、<strong>マウスを使わずに端から確認</strong>できます。
-    <kbd class="cl-k">Shift</kbd> を一緒に押すと、完了したものを飛ばします。</p>
+    <kbd class="cl-k">Shift</kbd> を一緒に押すと、完了したものを飛ばします。
+    <kbd class="cl-k">L</kbd> で一覧そのものを開いたり閉じたりできます。</p>
    </div>
 
    <!-- 8. 保存して共有 -->
    <div class="cl-g-step">
     <svg class="cl-g-art" viewBox="0 0 430 200" role="img" aria-label="資料を保存し、保存されたファイルそのものを相手に共有する">
-      <rect x="16" y="52" width="104" height="96" rx="8" fill="#fff" stroke="#e2e8f0" stroke-width="2"/>
-      <rect x="16" y="52" width="4" height="96" rx="2" fill="#0084A3"/>
-      <rect x="30" y="64" width="34" height="9" rx="4.5" fill="#0084A3"/>
-      <rect x="30" y="80" width="76" height="5" rx="2.5" fill="#e2e8f0"/>
-      <rect x="30" y="90" width="60" height="5" rx="2.5" fill="#e2e8f0"/>
-      <path d="M30 106 H106" stroke="#f1f5f9" stroke-width="1.5"/>
-      <rect x="30" y="114" width="30" height="9" rx="4.5" fill="#B0483F"/>
-      <rect x="30" y="130" width="66" height="5" rx="2.5" fill="#e2e8f0"/>
-      <text x="68" y="42" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#94a3b8">書いたコメント</text>
-      <path d="M126 84 C 148 84, 148 52, 168 52" stroke="#cbd5e1" stroke-width="2" fill="none" stroke-linecap="round"/>
-      <path d="M126 116 C 148 116, 148 148, 168 148" stroke="#cbd5e1" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <rect x="16" y="52" width="104" height="96" rx="8" fill="#fff" stroke="#e6e6e6" stroke-width="2"/>
+      <rect x="16" y="52" width="4" height="96" rx="2" fill="#008299"/>
+      <circle cx="36" cy="68" r="5" fill="#008299"/>
+      <rect x="46" y="64" width="30" height="8" rx="4" fill="#cccccc"/>
+      <rect x="30" y="80" width="76" height="5" rx="2.5" fill="#e6e6e6"/>
+      <rect x="30" y="90" width="60" height="5" rx="2.5" fill="#e6e6e6"/>
+      <path d="M30 106 H106" stroke="#f2f2f2" stroke-width="1.5"/>
+      <circle cx="36" cy="118" r="5" fill="#5c10be"/>
+      <rect x="46" y="114" width="24" height="8" rx="4" fill="#cccccc"/>
+      <rect x="30" y="130" width="66" height="5" rx="2.5" fill="#e6e6e6"/>
+      <text x="68" y="42" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#767676">書いたコメント</text>
+      <path d="M126 84 C 148 84, 148 52, 168 52" stroke="#cccccc" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <path d="M126 116 C 148 116, 148 148, 168 148" stroke="#cccccc" stroke-width="2" fill="none" stroke-linecap="round"/>
       <g>
-        <rect x="172" y="38" width="108" height="28" rx="6" fill="#1e2b30"/>
-        <text x="226" y="56" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#fff">💾 資料を保存</text>
-        <text x="226" y="76" text-anchor="middle" font-family="ui-monospace,monospace" font-size="8" fill="#94a3b8">⌘/Ctrl + S</text>
-        <path d="M288 52 h22" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="4 4" stroke-linecap="round"/>
-        <path d="M306 47 l6 5 -6 5" fill="none" stroke="#cbd5e1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M322 30 h34 l14 14 v42 h-48 z" fill="#fff" stroke="#0084A3" stroke-width="2" stroke-linejoin="round"/>
-        <path d="M356 30 v14 h14" fill="none" stroke="#0084A3" stroke-width="2" stroke-linejoin="round"/>
-        <text x="346" y="72" text-anchor="middle" font-family="system-ui,sans-serif" font-size="9" font-weight="700" fill="#0084A3">HTML</text>
-        <text x="346" y="100" text-anchor="middle" font-family="system-ui,sans-serif" font-size="9" fill="#94a3b8">このファイルを相手に送る</text>
+        <rect x="172" y="38" width="108" height="28" rx="8" fill="#0017c1"/>
+        <text x="226" y="56" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#fff">資料を保存</text>
+        <text x="226" y="76" text-anchor="middle" font-family="ui-monospace,monospace" font-size="8" fill="#767676">⌘/Ctrl + S</text>
+        <path d="M288 52 h22" stroke="#cccccc" stroke-width="2" stroke-dasharray="4 4" stroke-linecap="round"/>
+        <path d="M306 47 l6 5 -6 5" fill="none" stroke="#cccccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M322 30 h34 l14 14 v42 h-48 z" fill="#fff" stroke="#0017c1" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M356 30 v14 h14" fill="none" stroke="#0017c1" stroke-width="2" stroke-linejoin="round"/>
+        <text x="346" y="72" text-anchor="middle" font-family="system-ui,sans-serif" font-size="9" font-weight="700" fill="#0017c1">HTML</text>
+        <text x="346" y="100" text-anchor="middle" font-family="system-ui,sans-serif" font-size="9" fill="#767676">このファイルを相手に送る</text>
       </g>
       <g>
-        <rect x="172" y="134" width="108" height="28" rx="6" fill="#fff" stroke="#cbd5e1" stroke-width="2"/>
-        <text x="226" y="152" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#1e2b30">📋 指摘をコピー</text>
-        <text x="226" y="172" text-anchor="middle" font-family="ui-monospace,monospace" font-size="8" fill="#94a3b8">⌘/Ctrl + Shift + C</text>
-        <path d="M288 148 h22" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="4 4" stroke-linecap="round"/>
-        <path d="M306 143 l6 5 -6 5" fill="none" stroke="#cbd5e1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        <rect x="322" y="120" width="48" height="44" rx="8" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="2"/>
-        <circle cx="336" cy="138" r="3.5" fill="#1e2b30"/><circle cx="356" cy="138" r="3.5" fill="#1e2b30"/>
-        <path d="M334 150 q12 8 24 0" stroke="#1e2b30" stroke-width="2" fill="none" stroke-linecap="round"/>
-        <path d="M346 120 v-8" stroke="#cbd5e1" stroke-width="2" stroke-linecap="round"/><circle cx="346" cy="110" r="3" fill="#E07A3F"/>
-        <text x="346" y="180" text-anchor="middle" font-family="system-ui,sans-serif" font-size="9" fill="#94a3b8">AIに直させる</text>
+        <rect x="172" y="134" width="108" height="28" rx="8" fill="#fff" stroke="#0017c1" stroke-width="2"/>
+        <text x="226" y="152" text-anchor="middle" font-family="system-ui,sans-serif" font-size="9" font-weight="700" fill="#0017c1">AIに渡す指摘をコピー</text>
+        <text x="226" y="172" text-anchor="middle" font-family="ui-monospace,monospace" font-size="8" fill="#767676">⌘/Ctrl + Shift + S</text>
+        <path d="M288 148 h22" stroke="#cccccc" stroke-width="2" stroke-dasharray="4 4" stroke-linecap="round"/>
+        <path d="M306 143 l6 5 -6 5" fill="none" stroke="#cccccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="318" y="120" width="56" height="46" rx="8" fill="#f2f2f2" stroke="#b3b3b3" stroke-width="2"/>
+        <text x="346" y="142" text-anchor="middle" font-family="system-ui,sans-serif" font-size="11" font-weight="700" fill="#4d4d4d">AI</text>
+        <text x="346" y="157" text-anchor="middle" font-family="system-ui,sans-serif" font-size="8" fill="#767676">Slack</text>
+        <path d="M346 120 v-8" stroke="#cccccc" stroke-width="2" stroke-linecap="round"/><circle cx="346" cy="110" r="3" fill="#0017c1"/>
+        <text x="346" y="182" text-anchor="middle" font-family="system-ui,sans-serif" font-size="9" fill="#767676">貼って直させる／共有する</text>
       </g>
     </svg>
     <div class="cl-g-h">最後に、保存して相手に送る</div>
-    <p class="cl-g-lead"><strong style="color:#C4453B">書いただけでは、相手には伝わりません。</strong>
-    「保存」を押すと、コメントごと入ったHTMLがあなたのパソコンにダウンロードされます。
+    <p class="cl-g-lead"><strong style="color:#ec0000">書いただけでは、相手には伝わりません。</strong>
+    「資料を保存」を押すと、コメントごと入ったHTMLがあなたのパソコンにダウンロードされ、
+    <strong>画面の上に「保存しました」という案内が出ます</strong>。
     <strong>保存されるのはあなたのパソコンの中だけ</strong>なので、そのままでは相手には届きません。
     <strong>いま保存されたそのファイルを、Slackやメールでそのまま送ってください。</strong></p>
     <ul class="cl-g-list">
-      <li><strong>💾 資料を保存</strong>（<kbd class="cl-k">⌘</kbd>／<kbd class="cl-k">Ctrl</kbd> + <kbd class="cl-k">S</kbd>）
-        … 保存が終わると、画面下に「このファイルを送ってください」という案内が出ます。見逃したときのための念押しです</li>
-      <li><strong>📋 指摘をコピー</strong>（<kbd class="cl-k">⌘</kbd>／<kbd class="cl-k">Ctrl</kbd> + <kbd class="cl-k">Shift</kbd> + <kbd class="cl-k">C</kbd>）
-        … 全コメントを文章に整えてコピーします。AIに貼って「反映して」と頼めば、そのまま直させられます。
+      <li><strong>資料を保存</strong>（<kbd class="cl-k">⌘</kbd>／<kbd class="cl-k">Ctrl</kbd> + <kbd class="cl-k">S</kbd>）
+        … コメントごとHTMLを書き出します。押した直後に画面上部に案内が出るので、見落としません</li>
+      <li><strong>AIに渡す指摘をコピー</strong>（<kbd class="cl-k">⌘</kbd>／<kbd class="cl-k">Ctrl</kbd> +
+        <kbd class="cl-k">Shift</kbd> + <kbd class="cl-k">S</kbd>）
+        … <strong>全コメントを1つの文章にまとめてクリップボードへ写します。</strong>
+        これをAIに貼って「反映して」と頼めば、資料をそのまま直させられます。Slackに貼って指摘を共有するのにも使えます。
         <strong>完了した指摘は「対応済み・修正不要」と明記される</strong>ので、直した箇所を蒸し返しません</li>
     </ul>
-    <div class="cl-g-tip">保存する前にタブを閉じてしまっても大丈夫。同じファイルを開き直すと、
-    「前回の未保存コメントを復元しますか？」と聞いてくれます。</div>
+    <div class="cl-g-tip">
+      <svg class="cl-i" data-s="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 17h2v-6h-2v6Zm1-8c.283 0 .52-.096.712-.288A.968.968 0 0 0 13 8a.968.968 0 0 0-.288-.712A.968.968 0 0 0 12 7a.968.968 0 0 0-.712.288A.968.968 0 0 0 11 8c0 .283.096.52.288.712.191.192.429.288.712.288Zm0 13a9.7 9.7 0 0 1-3.9-.79 10.1 10.1 0 0 1-5.31-5.31A9.7 9.7 0 0 1 2 12c0-1.39.26-2.69.79-3.9a10.1 10.1 0 0 1 5.31-5.31A9.7 9.7 0 0 1 12 2c1.39 0 2.69.26 3.9.79a10.1 10.1 0 0 1 5.31 5.31c.53 1.21.79 2.51.79 3.9s-.26 2.69-.79 3.9a10.1 10.1 0 0 1-5.31 5.31c-1.21.53-2.51.79-3.9.79Z"/></svg>
+      <div>保存する前にタブを閉じてしまっても大丈夫。同じファイルを開き直すと、「前回の未保存コメントを復元しますか？」と聞いてくれます。</div>
+    </div>
    </div>
 
    <!-- 9. ショートカット -->
    <div class="cl-g-step">
     <svg class="cl-g-art" viewBox="0 0 430 170" role="img" aria-label="キーボードショートカット">
-      <rect x="30" y="14" width="370" height="146" rx="12" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
-      <g fill="#fff" stroke="#cbd5e1" stroke-width="2" stroke-linejoin="round">
-        <rect x="50" y="30" width="44" height="30" rx="6"/>
-        <rect x="104" y="30" width="44" height="30" rx="6"/>
-        <rect x="158" y="30" width="44" height="30" rx="6"/>
-        <rect x="212" y="30" width="60" height="30" rx="6"/>
-        <rect x="282" y="30" width="98" height="30" rx="6"/>
+      <rect x="30" y="14" width="370" height="146" rx="12" fill="#f2f2f2" stroke="#b3b3b3" stroke-width="2"/>
+      <g fill="#fff" stroke="#b3b3b3" stroke-width="2" stroke-linejoin="round">
+        <rect x="44" y="30" width="40" height="30" rx="6"/>
+        <rect x="92" y="30" width="40" height="30" rx="6"/>
+        <rect x="140" y="30" width="40" height="30" rx="6"/>
+        <rect x="188" y="30" width="40" height="30" rx="6"/>
+        <rect x="236" y="30" width="52" height="30" rx="6"/>
+        <rect x="296" y="30" width="90" height="30" rx="6"/>
       </g>
-      <g font-family="ui-monospace,SFMono-Regular,monospace" font-size="14" font-weight="700" fill="#1e2b30" text-anchor="middle">
-        <text x="72" y="50">C</text><text x="126" y="50">J</text><text x="180" y="50">K</text>
-        <text x="242" y="50" font-size="12">Esc</text><text x="331" y="50" font-size="12">⌘ + Enter</text>
+      <g font-family="ui-monospace,SFMono-Regular,monospace" font-size="14" font-weight="700" fill="#1a1a1a" text-anchor="middle">
+        <text x="64" y="50">C</text><text x="112" y="50">L</text><text x="160" y="50">J</text><text x="208" y="50">K</text>
+        <text x="262" y="50" font-size="12">Esc</text><text x="341" y="50" font-size="12">⌘ + Enter</text>
       </g>
-      <g font-family="system-ui,sans-serif" font-size="9" fill="#94a3b8" text-anchor="middle">
-        <text x="72" y="78">ピン</text><text x="126" y="78">次へ</text><text x="180" y="78">前へ</text>
-        <text x="242" y="78">やめる</text><text x="331" y="78">保存</text>
+      <g font-family="system-ui,sans-serif" font-size="9" fill="#767676" text-anchor="middle">
+        <text x="64" y="78">ピン</text><text x="112" y="78">一覧</text><text x="160" y="78">次へ</text><text x="208" y="78">前へ</text>
+        <text x="262" y="78">やめる</text><text x="341" y="78">保存</text>
       </g>
-      <g fill="#fff" stroke="#0084A3" stroke-width="2" stroke-linejoin="round">
+      <g fill="#fff" stroke="#0017c1" stroke-width="2" stroke-linejoin="round">
         <rect x="70" y="98" width="80" height="30" rx="6"/>
         <rect x="192" y="98" width="140" height="30" rx="6"/>
       </g>
-      <g font-family="ui-monospace,SFMono-Regular,monospace" font-size="12" font-weight="700" fill="#0084A3" text-anchor="middle">
-        <text x="110" y="118">⌘ + S</text><text x="262" y="118">⌘ + Shift + C</text>
+      <g font-family="ui-monospace,SFMono-Regular,monospace" font-size="12" font-weight="700" fill="#0017c1" text-anchor="middle">
+        <text x="110" y="118">⌘ + S</text><text x="262" y="118">⌘ + Shift + S</text>
       </g>
-      <g font-family="system-ui,sans-serif" font-size="9" fill="#94a3b8" text-anchor="middle">
-        <text x="110" y="146">資料を保存</text><text x="262" y="146">指摘をコピー</text>
+      <g font-family="system-ui,sans-serif" font-size="9" fill="#767676" text-anchor="middle">
+        <text x="110" y="146">資料を保存</text><text x="262" y="146">AIに渡す指摘をコピー</text>
       </g>
     </svg>
     <div class="cl-g-h">ショートカット一覧</div>
     <table class="cl-g-keys">
       <caption>キーボード</caption>
       <tr><td><kbd class="cl-k">C</kbd></td><td>ピンモードの切り替え（押してから資料上をクリックでピンが立つ）</td></tr>
+      <tr><td><kbd class="cl-k">L</kbd></td><td>コメント一覧を開く / 閉じる</td></tr>
       <tr><td><kbd class="cl-k">J</kbd> / <kbd class="cl-k">K</kbd></td><td>次 / 前のコメントへ移動（一覧の並び順どおり。本文も追従）</td></tr>
       <tr><td><kbd class="cl-k">Shift</kbd> + <kbd class="cl-k">J</kbd> / <kbd class="cl-k">K</kbd></td><td>完了した指摘を飛ばして、次 / 前へ</td></tr>
-      <tr><td><kbd class="cl-k">⌘</kbd> / <kbd class="cl-k">Ctrl</kbd> + <kbd class="cl-k">Enter</kbd></td><td>入力中のコメント・返信を保存（操作中のユーザー欄では、名前の確定にも使えます）</td></tr>
-      <tr><td><kbd class="cl-k">⌘</kbd> / <kbd class="cl-k">Ctrl</kbd> + <kbd class="cl-k">S</kbd></td><td>💾 資料を保存（確認なしで即保存。保存後に共有を促す通知が出ます）</td></tr>
-      <tr><td><kbd class="cl-k">⌘</kbd> / <kbd class="cl-k">Ctrl</kbd> + <kbd class="cl-k">Shift</kbd> + <kbd class="cl-k">C</kbd></td><td>📋 指摘をコピー</td></tr>
+      <tr><td><kbd class="cl-k">⌘</kbd> / <kbd class="cl-k">Ctrl</kbd> + <kbd class="cl-k">Enter</kbd></td><td>入力中のコメント・返信を保存</td></tr>
+      <tr><td><kbd class="cl-k">⌘</kbd> / <kbd class="cl-k">Ctrl</kbd> + <kbd class="cl-k">S</kbd></td><td>資料を保存（確認なしで即保存。保存後に画面上部で共有を促します）</td></tr>
+      <tr><td><kbd class="cl-k">⌘</kbd> / <kbd class="cl-k">Ctrl</kbd> + <kbd class="cl-k">Shift</kbd> + <kbd class="cl-k">S</kbd></td><td>AIに渡す指摘をコピー</td></tr>
       <tr><td><kbd class="cl-k">Esc</kbd></td><td>入力の取り消し → ピンモード解除 → 一覧を閉じる（押すたびに1段ずつ戻る）</td></tr>
       <tr><td><kbd class="cl-k">←</kbd> / <kbd class="cl-k">→</kbd></td><td>このガイドのページ送り</td></tr>
     </table>
     <table class="cl-g-keys">
       <caption>マウス</caption>
-      <tr><td>本文をドラッグ選択</td><td>「💬 コメントする」が出る</td></tr>
+      <tr><td>本文をドラッグ選択</td><td>「コメントする」が出る</td></tr>
       <tr><td>色の付いた箇所 / ピンをクリック</td><td>一覧の該当コメントへ（本文は動きません）</td></tr>
       <tr><td>一覧のカードをクリック</td><td>本文のその場所までスクロール</td></tr>
       <tr><td>ピンをドラッグ</td><td>ピンの位置を動かす</td></tr>
-      <tr><td>カードの ✅ / 🔄 / ✏️ / 🗑️</td><td>完了 / 完了の取り消し / 編集 / 削除</td></tr>
-      <tr><td>名前の横のチップ</td><td>ラベルを must → want → nit → なし と切り替え</td></tr>
+      <tr><td>カードのチェック</td><td>完了 / 完了の取り消し</td></tr>
+      <tr><td>カードの「…」</td><td>編集 / 削除 / 完了</td></tr>
+      <tr><td>名前の横のチップ</td><td>優先度を 必須 → 要望 → 軽微 → なし と切り替え</td></tr>
+      <tr><td>ボタンにマウスを重ねる</td><td>そのボタンのショートカットが出ます</td></tr>
     </table>
-    <div class="cl-g-tip">このガイドは、画面左下の「📖 使い方」からいつでも開けます（下のバーとは別の、独立したボタンです）。</div>
+    <div class="cl-g-tip">
+      <svg class="cl-i" data-s="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 17h2v-6h-2v6Zm1-8c.283 0 .52-.096.712-.288A.968.968 0 0 0 13 8a.968.968 0 0 0-.288-.712A.968.968 0 0 0 12 7a.968.968 0 0 0-.712.288A.968.968 0 0 0 11 8c0 .283.096.52.288.712.191.192.429.288.712.288Zm0 13a9.7 9.7 0 0 1-3.9-.79 10.1 10.1 0 0 1-5.31-5.31A9.7 9.7 0 0 1 2 12c0-1.39.26-2.69.79-3.9a10.1 10.1 0 0 1 5.31-5.31A9.7 9.7 0 0 1 12 2c1.39 0 2.69.26 3.9.79a10.1 10.1 0 0 1 5.31 5.31c.53 1.21.79 2.51.79 3.9s-.26 2.69-.79 3.9a10.1 10.1 0 0 1-5.31 5.31c-1.21.53-2.51.79-3.9.79Z"/></svg>
+      <div>このガイドは、画面左下の「使い方」からいつでも開けます（下のバーとは別の、独立したボタンです）。</div>
+    </div>
    </div>
 
   </div>
 
   <div class="cl-g-foot">
     <div class="cl-g-dots">
-      <button class="cl-g-dot on" data-cl="guide-dot" data-i="0" title="1"></button>
-      <button class="cl-g-dot" data-cl="guide-dot" data-i="1" title="2"></button>
-      <button class="cl-g-dot" data-cl="guide-dot" data-i="2" title="3"></button>
-      <button class="cl-g-dot" data-cl="guide-dot" data-i="3" title="4"></button>
-      <button class="cl-g-dot" data-cl="guide-dot" data-i="4" title="5"></button>
-      <button class="cl-g-dot" data-cl="guide-dot" data-i="5" title="6"></button>
-      <button class="cl-g-dot" data-cl="guide-dot" data-i="6" title="7"></button>
-      <button class="cl-g-dot" data-cl="guide-dot" data-i="7" title="8"></button>
-      <button class="cl-g-dot" data-cl="guide-dot" data-i="8" title="9"></button>
+      <button class="cl-g-dot on" data-cl="guide-dot" data-i="0" aria-label="1ページ目"></button>
+      <button class="cl-g-dot" data-cl="guide-dot" data-i="1" aria-label="2ページ目"></button>
+      <button class="cl-g-dot" data-cl="guide-dot" data-i="2" aria-label="3ページ目"></button>
+      <button class="cl-g-dot" data-cl="guide-dot" data-i="3" aria-label="4ページ目"></button>
+      <button class="cl-g-dot" data-cl="guide-dot" data-i="4" aria-label="5ページ目"></button>
+      <button class="cl-g-dot" data-cl="guide-dot" data-i="5" aria-label="6ページ目"></button>
+      <button class="cl-g-dot" data-cl="guide-dot" data-i="6" aria-label="7ページ目"></button>
+      <button class="cl-g-dot" data-cl="guide-dot" data-i="7" aria-label="8ページ目"></button>
+      <button class="cl-g-dot" data-cl="guide-dot" data-i="8" aria-label="9ページ目"></button>
     </div>
     <div class="cl-g-nav">
-      <button class="cl-g-btn" id="cl-g-prev" data-cl="guide-prev" disabled>← 戻る</button>
-      <button class="cl-g-btn primary" id="cl-g-next" data-cl="guide-next">次へ →</button>
+      <button class="cl-btn cl-g-btn" data-type="outline" data-size="sm" id="cl-g-prev" data-cl="guide-prev" disabled>戻る</button>
+      <button class="cl-btn cl-g-btn" data-type="solid-fill" data-size="sm" id="cl-g-next" data-cl="guide-next">次へ</button>
     </div>
   </div>
  </div>
@@ -756,39 +1045,66 @@ kbd.cl-k{ display:inline-block; background:#fff; border:1px solid #cbd5e1; borde
 (function () {
   'use strict';
   if (window.__commentLayer) return;
-  var VERSION = '2.4.1';
+  var VERSION = '2.5.0';
 
   var comments = [], users = [], pinMode = false, draft = null, dirty = false, activeId = null, booted = false;
-  var activeUserId = null, toastTimer = null;
-  // 新規ユーザーに割り当てる色。既存の色とかぶらない先頭から使い、尽きたらランダムに逃がす
-  var USER_PALETTE = ['#0084A3', '#E07A3F', '#B0483F', '#4F9E72', '#7C5CBF', '#C9973B', '#3F7FE0', '#C4453B'];
+  var activeUserId = null, toastTimer = null, openMenuId = null;
+  // 新規ユーザーに割り当てる色。既存の色とかぶらない先頭から使い、尽きたらランダムに逃がす。
+  // 値はDADSのプリミティブから、キーカラー（青）と紛れない色相だけを選んである
+  var USER_PALETTE = ['#008299', '#c74700', '#197a4b', '#5c10be', '#aa00aa', '#0066be', '#a90000', '#618e00'];
+  var DEFAULT_USER = { id: 'u1', name: 'レビュアー1', color: '#008299' };
   var host = null, pinBox = null, savedRange = null;
   var SMOOTH = matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+  // 保存値は must / want / nit のまま（過去の資料と、書き出したJSONを読むAIの互換のため）。
+  // 画面に出す言葉だけを日本語にする
   var LABELS = ['must', 'want', 'nit'];
+  var LABEL_JA = { must: '必須', want: '要望', nit: '軽微' };
+  var LABEL_DESC = { must: '必ず直す', want: 'できれば直す', nit: '細かい好み' };
   // 並び順は資料の中身ではなく「読み手の都合」なので、ファイルには焼かず localStorage に持つ
   var sortMode = 'updated';
 
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var root = document.documentElement;
 
+  /* ---------- アイコン ----------
+     絵文字はOS・ブラウザごとに絵柄も字幅も変わり、資料の中で浮く。
+     DADS と同じ 24x24 / currentColor の線画に統一して、色とサイズはCSS側に任せる。
+     JSで組み立てるカード用に、ここを唯一の定義元にする（マークアップ側と同じ形）。 */
+  var ICON = {
+    check: 'M10.6 16.6 17.65 9.55l-1.4-1.4-5.65 5.65-2.85-2.85-1.4 1.4 4.25 4.25ZM12 22a9.7 9.7 0 0 1-3.9-.79 10.1 10.1 0 0 1-5.31-5.31A9.7 9.7 0 0 1 2 12c0-1.39.26-2.69.79-3.9a10.1 10.1 0 0 1 5.31-5.31A9.7 9.7 0 0 1 12 2c1.39 0 2.69.26 3.9.79a10.1 10.1 0 0 1 5.31 5.31c.53 1.21.79 2.51.79 3.9s-.26 2.69-.79 3.9a10.1 10.1 0 0 1-5.31 5.31c-1.21.53-2.51.79-3.9.79Zm0-2c2.23 0 4.12-.78 5.67-2.33S20 14.23 20 12s-.78-4.12-2.33-5.67S14.23 4 12 4s-4.12.78-5.67 2.33S4 9.77 4 12s.78 4.12 2.33 5.67S9.77 20 12 20Z',
+    undo: 'M13 21c-2.2 0-4.104-.729-5.712-2.188C5.679 17.354 4.767 15.533 4.5 13.35h2.05c.25 1.617 1 2.958 2.25 4.025C10.05 18.442 11.517 18.975 13 18.975c1.65 0 3.05-.575 4.2-1.725 1.15-1.15 1.725-2.55 1.725-4.2s-.575-3.05-1.725-4.2C16.05 7.7 14.65 7.125 13 7.125c-.867 0-1.675.179-2.425.537A5.877 5.877 0 0 0 8.6 9.15H11v2H5V5.15h2v2.55a7.7 7.7 0 0 1 2.663-1.85A8.15 8.15 0 0 1 13 5.125c1.1 0 2.13.208 3.088.625a8.03 8.03 0 0 1 2.524 1.7 8.03 8.03 0 0 1 1.7 2.525c.417.958.625 1.988.625 3.087s-.208 2.13-.625 3.088a8.03 8.03 0 0 1-1.7 2.524 8.03 8.03 0 0 1-2.524 1.7A7.68 7.68 0 0 1 13 21Z',
+    more: 'M12 20a1.95 1.95 0 0 1-1.425-.575A1.95 1.95 0 0 1 10 18c0-.55.192-1.025.575-1.425A1.95 1.95 0 0 1 12 16c.55 0 1.025.192 1.425.575S14 17.45 14 18s-.192 1.025-.575 1.425A1.95 1.95 0 0 1 12 20Zm0-6a1.95 1.95 0 0 1-1.425-.575A1.95 1.95 0 0 1 10 12c0-.55.192-1.025.575-1.425A1.95 1.95 0 0 1 12 10c.55 0 1.025.192 1.425.575S14 11.45 14 12s-.192 1.025-.575 1.425A1.95 1.95 0 0 1 12 14Zm0-6a1.95 1.95 0 0 1-1.425-.575A1.95 1.95 0 0 1 10 6c0-.55.192-1.025.575-1.425A1.95 1.95 0 0 1 12 4c.55 0 1.025.192 1.425.575S14 5.45 14 6s-.192 1.025-.575 1.425A1.95 1.95 0 0 1 12 8Z',
+    edit: 'M5 19h1.4l8.6-8.6-1.4-1.4L5 17.6V19Zm14.3-10.075-4.25-4.2 1.4-1.4c.383-.383.858-.575 1.425-.575s1.042.192 1.425.575l1.4 1.4c.383.383.575.85.575 1.4s-.192 1.017-.575 1.4l-1.4 1.4ZM17.85 10.4 7.25 21H3v-4.25l10.6-10.6 4.25 4.25Z',
+    trash: 'M7 21c-.55 0-1.02-.196-1.412-.587A1.926 1.926 0 0 1 5 19V6H4V4h5V3h6v1h5v2h-1v13c0 .55-.196 1.02-.587 1.413A1.926 1.926 0 0 1 17 21H7ZM17 6H7v13h10V6ZM9 17h2V8H9v9Zm4 0h2V8h-2v9Z',
+    reply: 'M10 19v-2h5.6c.9 0 1.7-.29 2.4-.875.7-.583 1.05-1.325 1.05-2.225s-.35-1.642-1.05-2.225C17.3 11.09 16.5 10.8 15.6 10.8H7.8l2.6 2.6L9 14.8 4 9.8l5-5 1.4 1.4-2.6 2.6h7.8c1.45 0 2.7.48 3.75 1.438C20.4 11.196 20.925 12.4 20.925 13.9s-.525 2.704-1.575 3.663C18.3 18.52 17.05 19 15.6 19H10Z',
+    pin: 'M12 12c.55 0 1.02-.196 1.412-.587C13.804 11.02 14 10.55 14 10s-.196-1.02-.588-1.412A1.926 1.926 0 0 0 12 8c-.55 0-1.02.196-1.412.588A1.926 1.926 0 0 0 10 10c0 .55.196 1.02.588 1.413.391.391.862.587 1.412.587Zm0 10c-2.683-2.283-4.687-4.404-6.012-6.363C4.663 13.679 4 11.867 4 10.2c0-2.5.804-4.492 2.413-5.975C8.02 2.742 9.883 2 12 2s3.98.742 5.588 2.225C19.196 5.708 20 7.7 20 10.2c0 1.667-.663 3.479-1.988 5.437C16.688 17.596 14.683 19.717 12 22Z',
+    warn: 'M1 21 12 2l11 19H1Zm3.45-2h15.1L12 6 4.45 19ZM12 18c.283 0 .52-.096.712-.288A.968.968 0 0 0 13 17a.968.968 0 0 0-.288-.712A.968.968 0 0 0 12 16a.968.968 0 0 0-.712.288A.968.968 0 0 0 11 17c0 .283.096.52.288.712.191.192.429.288.712.288Zm-1-3h2v-5h-2v5Z',
+    pencilSm: 'M5 19h1.4l8.6-8.6-1.4-1.4L5 17.6V19Zm12.85-8.6L7.25 21H3v-4.25l10.6-10.6 4.25 4.25Z'
+  };
+  function svgIcon(name, size, cls) {
+    return '<svg class="cl-i' + (cls ? ' ' + cls : '') + '" data-s="' + (size || 20) +
+      '" viewBox="0 0 24 24" aria-hidden="true"><path d="' + ICON[name] + '"/></svg>';
+  }
+
   /* ---------- 起動 ---------- */
   function boot() {
     if (booted) return; booted = true;
 
-    users = readJSON('user-master', [{ id: 'u1', name: 'レビュアー1', color: '#0084A3' }]);
-    if (!users.length) users = [{ id: 'u1', name: 'レビュアー1', color: '#0084A3' }];
+    users = readJSON('user-master', [DEFAULT_USER]);
+    if (!users.length) users = [DEFAULT_USER];
     comments = readJSON('comment-store', []);
     comments.forEach(normalize);
 
     try {
+      // v2.4 以前の「文書順（doc）」は廃止した。保存されていても既定へ落とす
       var sm = localStorage.getItem('cl-sort');
-      if (sm === 'doc' || sm === 'updated') sortMode = sm;
+      if (sm === 'priority' || sm === 'updated') sortMode = sm;
     } catch (e) {}
     var ss = $('#cl-sort');
     if (ss) {
       ss.value = sortMode;
       ss.onchange = function (e) {
-        sortMode = e.target.value === 'doc' ? 'doc' : 'updated';
+        sortMode = e.target.value === 'priority' ? 'priority' : 'updated';
         try { localStorage.setItem('cl-sort', sortMode); } catch (er) {}
         render();
       };
@@ -881,35 +1197,24 @@ kbd.cl-k{ display:inline-block; background:#fff; border:1px solid #cbd5e1; borde
      表示順
      完了は削除もアーカイブもせず、常に最下部にまとめる。
      未完了・完了それぞれの中では「更新順（最終更新が新しいものが上）」が既定で、
-     資料を上から通して読むときのために「文書順」へ切り替えられる。
-     文書順の位置は本文中のハイライト／ピンの実際の縦位置で測る。ハイライトを
-     失ったコメントは位置が決められないので末尾に送る。
+     重い指摘から片付けたいときのために「優先度順」へ切り替えられる。
+     優先度順は 必須(must) → 要望(want) → 軽微(nit) → なし の順で、
+     同じ優先度の中は更新順（新しいものが上）。読み手が次に触る順そのものになる。
+     v2.4 までの「文書順」は、資料の登場順という並びが実際の作業順と結びつかず
+     使われなかったので廃止した。
      ========================================== */
-  function docPos(c) {
-    if (c.type === 'pin') {
-      var hr = host.getBoundingClientRect();
-      return hr.top + window.scrollY + (parseFloat(c.y) || 0);
-    }
-    var el = document.querySelector('.comment-highlight[data-id="' + c.id + '"]');
-    if (!el) return Infinity;
-    var r = el.getBoundingClientRect();
-    if (!r.height && !r.width) return Infinity;
-    return r.top + window.scrollY;
+  function priorityRank(c) {
+    var i = LABELS.indexOf(labelOf(c));
+    return i < 0 ? LABELS.length : i;     // ラベルなしは最後
   }
 
   function orderedComments() {
-    var pos = null;
-    if (sortMode === 'doc') {
-      pos = {};
-      comments.forEach(function (c) { pos[c.id] = docPos(c); });
-    }
     return comments.slice().sort(function (a, b) {
       var da = isDone(a) ? 1 : 0, db = isDone(b) ? 1 : 0;
       if (da !== db) return da - db;
-      if (pos) {
-        // Infinity 同士の引き算は NaN になるので、等値のときは並びを崩さず 0 を返す
-        if (pos[a.id] === pos[b.id]) return 0;
-        return pos[a.id] - pos[b.id];
+      if (sortMode === 'priority') {
+        var pa = priorityRank(a), pb = priorityRank(b);
+        if (pa !== pb) return pa - pb;
       }
       var sa = stamp(a), sb = stamp(b);
       if (sa === sb) return 0;
@@ -1295,12 +1600,12 @@ kbd.cl-k{ display:inline-block; background:#fff; border:1px solid #cbd5e1; borde
     var title = (document.title || '').trim() || 'HTML資料';
     var out = ['以下はHTML資料「' + title + '」へのレビュー指摘です。各指摘の「対象」の引用を本文から検索し、指摘内容を反映してください。',
       '各指摘には「状態」があります。状態が「完了」のものは対応済みです。記録として残しているだけなので、再度修正しないでください。',
-      'ラベルは優先度です。must＝必ず直す、want＝できれば直す、nit＝細かい好み。ラベルが無いものは優先度の指定なしです。',
+      '見出しの [ ] は優先度です。必須＝必ず直す、要望＝できれば直す、軽微＝細かい好み。表記が無いものは優先度の指定なしです。',
       '「返信」はその指摘に付いたやりとりです。最後の返信が最新の状況を表します。', ''];
     orderedComments().forEach(function (c, i) {
       var when = fmtFull(c.date), upd = fmtFull(c.updatedAt);
       var lab = labelOf(c);
-      out.push('## 指摘 ' + (i + 1) + (lab ? ' [' + lab + ']' : '') + '（' + (c.author || '不明') +
+      out.push('## 指摘 ' + (i + 1) + (lab ? ' [' + LABEL_JA[lab] + ']' : '') + '（' + (c.author || '不明') +
                (when ? '、' + when : '') + (upd && upd !== when ? '、最終更新 ' + upd : '') + '）');
       out.push(isDone(c)
         ? '状態: 完了（' + (c.resolvedBy || '担当者不明') + (fmtFull(c.resolvedAt) ? '、' + fmtFull(c.resolvedAt) : '') + '）※対応済み。修正不要'
@@ -1331,12 +1636,15 @@ kbd.cl-k{ display:inline-block; background:#fff; border:1px solid #cbd5e1; borde
     return out.join('\n');
   }
 
-  function flashButton(btn, label) {
+  // ボタンの文言だけを一時的に差し替える。ボタンの中にはアイコンのSVGが入っているので、
+  // textContent を丸ごと書き換えるとアイコンごと消える。文言用の span があればそこだけ触る
+  function flashLabel(btn, label) {
     if (!btn || btn.dataset.flashing) return;
-    var orig = btn.textContent;
+    var slot = btn.querySelector('.cl-btn-label') || btn;
+    var orig = slot.textContent;
     btn.dataset.flashing = '1';
-    btn.textContent = label;
-    setTimeout(function () { btn.textContent = orig; delete btn.dataset.flashing; }, 1400);
+    slot.textContent = label;
+    setTimeout(function () { slot.textContent = orig; delete btn.dataset.flashing; }, 1400);
   }
 
   // 確認を求めない軽い通知。押すと即座に消せる。確認が要る操作（削除など）には使わない
@@ -1364,10 +1672,10 @@ kbd.cl-k{ display:inline-block; background:#fff; border:1px solid #cbd5e1; borde
 
   function copyReview() {
     var btn = $('#cl-copy');
-    if (!comments.length) { flashButton(btn, 'コメントがありません'); return; }
+    if (!comments.length) { flashLabel(btn, 'コメントがありません'); return; }
     var md = buildReviewMarkdown();
-    var done = function () { flashButton(btn, '✅ コピーしました'); };
-    var fall = function () { fallbackCopy(md) ? done() : flashButton(btn, 'コピーできませんでした'); };
+    var done = function () { flashLabel(btn, 'コピーしました'); };
+    var fall = function () { fallbackCopy(md) ? done() : flashLabel(btn, 'コピーできませんでした'); };
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(md).then(done, fall);
       else fall();
@@ -1445,48 +1753,110 @@ kbd.cl-k{ display:inline-block; background:#fff; border:1px solid #cbd5e1; borde
     if (!open && draft) cancelDraft();
   }
 
-  /* ---------- ユーザーマスタ ---------- */
-  function renderUsers() {
-    var options = $('#cl-user-options');
-    options.innerHTML = '';
-    users.forEach(function (u) {
-      var o = document.createElement('option');
-      o.value = u.name;
-      options.appendChild(o);
-    });
+  /* ==========================================
+     操作中のユーザー
+     v2.4 までは1つのテキスト欄が「切り替え」と「新規追加」を兼ねていた。
+     打った名前が一覧になければ黙って新しい人が増えるので、打ち間違い・表記ゆれが
+     そのまま別人として増えていく（「田中」「田中 」「たなか」）。
+     v2.5 では役割を割った。
+       ・コンボボックス … 登録済みから選ぶだけ。ここでは絶対に人を増やさない
+       ・ユーザーを管理 … 追加・改名・色変更・削除。増やすのはここだけ
+     ========================================== */
+  var comboOpen = false, comboIndex = -1, comboItems = [];
 
+  function renderUsers() {
     if (!activeUserId || !users.some(function (u) { return u.id === activeUserId; })) {
       var saved = null;
       try { saved = localStorage.getItem('cl-user-id'); } catch (e) {}
       activeUserId = users.some(function (u) { return u.id === saved; }) ? saved : users[0].id;
     }
     paintUserCombo();
+    if (comboOpen) renderComboList();
+    renderMasterList();
+  }
 
+  function renderMasterList() {
     var list = $('#cl-master-list');
+    if (!list) return;
     list.innerHTML = '';
     users.forEach(function (u) {
-      var row = document.createElement('div'); row.className = 'cl-master-item';
-      var c = document.createElement('input'); c.type = 'color'; c.value = safeColor(u.color);
+      var row = document.createElement('div');
+      row.className = 'cl-master-item';
+
+      // 色 → 名前 → 操作 の並びは、新規追加の行とそろえてある。
+      // 行ごとに色の位置が動くと、それだけで「どれを押せばいいか」を毎回考えさせてしまう
+      var sw = document.createElement('span');
+      sw.className = 'cl-swatch';
+      var c = document.createElement('input');
+      c.type = 'color'; c.value = safeColor(u.color);
+      c.setAttribute('aria-label', u.name + ' の色');
       c.onchange = function (e) { updateUser(u.id, 'color', e.target.value); };
-      var n = document.createElement('input'); n.type = 'text'; n.value = u.name;
-      n.onchange = function (e) { updateUser(u.id, 'name', e.target.value); };
-      var d = document.createElement('button'); d.className = 'cl-ibtn del'; d.textContent = '🗑️'; d.title = '削除';
-      d.disabled = users.length <= 1;
-      d.onclick = function () {
-        if (users.length <= 1) return;
-        commit({ type: 'user-delete', id: u.id });
+      sw.appendChild(c);
+
+      var n = document.createElement('input');
+      n.type = 'text'; n.value = u.name;
+      n.setAttribute('aria-label', u.name + ' の名前');
+      var commitName = function () {
+        var v = n.value.trim();
+        if (!v || v === u.name) { n.value = u.name; return; }
+        updateUser(u.id, 'name', v);
       };
-      row.appendChild(c); row.appendChild(n); row.appendChild(d);
+      n.onchange = commitName;
+      // 改名も Enter／⌘+Enter で確定できる。フォーカスを外しに行かせない
+      n.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); commitName(); n.blur(); }
+        else if (e.key === 'Escape') { e.preventDefault(); n.value = u.name; n.blur(); }
+      });
+
+      // 削除は「押されたくない」操作なので、追加より一段小さい outline のまま置く。
+      // ただし何のボタンか分からない絵文字ではなく、文言で示す
+      var d = document.createElement('button');
+      d.className = 'cl-btn';
+      d.setAttribute('data-type', 'outline');
+      d.setAttribute('data-size', 'xs');
+      d.setAttribute('data-danger', '');
+      d.innerHTML = svgIcon('trash', 16) + '削除';
+      d.disabled = users.length <= 1;
+      if (d.disabled) d.title = '最後の1人は削除できません';
+      d.onclick = function () { deleteUser(u.id); };
+
+      row.appendChild(sw); row.appendChild(n); row.appendChild(d);
       list.appendChild(row);
     });
     var nc = $('#cl-new-color');
     if (nc) nc.value = nextUserColor();
   }
 
+  // すでにコメント・返信を書いている人を消すと、そのコメントは残るのに
+  // 一覧から名前が消える。黙って消さず、何件あるかを見せてから確認する
+  function userContributionCount(u) {
+    var n = 0;
+    comments.forEach(function (c) {
+      if (c.author === u.name) n++;
+      repliesOf(c).forEach(function (r) { if (r.author === u.name) n++; });
+    });
+    return n;
+  }
+
+  function deleteUser(id) {
+    if (users.length <= 1) return;
+    var u = users.filter(function (x) { return x.id === id; })[0];
+    if (!u) return;
+    var n = userContributionCount(u);
+    if (n > 0) {
+      var ok = confirm('「' + u.name + '」さんは、すでに ' + n + ' 件のコメント・返信を書いています。\n\n' +
+        '削除しても書き込みは資料に残りますが、一覧からこの人がいなくなるため、\n' +
+        '以後この名前でコメントを書くことも、名前や色をまとめて直すこともできなくなります。\n\n' +
+        '削除しますか？');
+      if (!ok) return;
+    }
+    commit({ type: 'user-delete', id: id });
+  }
+
   // 操作中のユーザー欄の見た目（名前と色のドット）を、いまの activeUserId に合わせて描き直す
   function paintUserCombo() {
-    var input = $('#cl-user'), dot = $('#cl-user-dot'), u = currentUser();
-    if (input && document.activeElement !== input) input.value = u ? u.name : '';
+    var name = $('#cl-user-name'), dot = $('#cl-user-dot'), u = currentUser();
+    if (name) name.textContent = u ? u.name : '';
     if (dot) dot.style.background = safeColor(u && u.color);
   }
 
@@ -1499,21 +1869,85 @@ kbd.cl-k{ display:inline-block; background:#fff; border:1px solid #cbd5e1; borde
     return true;
   }
 
-  // 名前を確定：既存のレビュアーと同じ名前（大小文字・前後空白は無視）ならその人に切り替え、
-  // 一致しなければその場で新しいレビュアーとして追加してから切り替える
-  function resolveUserInput() {
+  /* ---------- コンボボックス（プルダウン＋絞り込み） ---------- */
+  function filteredUsers() {
     var input = $('#cl-user');
-    if (!input) return;
-    var raw = input.value.trim();
-    if (!raw) { paintUserCombo(); return; }
-    var hit = users.filter(function (u) { return u.name.trim().toLowerCase() === raw.toLowerCase(); })[0];
-    if (hit) setActiveUser(hit.id);
-    else {
-      var id = 'u-' + Date.now().toString(36);
-      commit({ type: 'user-add', user: { id: id, name: raw, color: nextUserColor() } });
-      setActiveUser(id);
+    var q = (input ? input.value : '').trim().toLowerCase();
+    if (!q) return users.slice();
+    return users.filter(function (u) { return String(u.name).toLowerCase().indexOf(q) >= 0; });
+  }
+
+  function renderComboList() {
+    var ul = $('#cl-user-list'), empty = $('#cl-user-empty');
+    if (!ul) return;
+    comboItems = filteredUsers();
+    ul.innerHTML = '';
+    comboItems.forEach(function (u, i) {
+      var li = document.createElement('li');
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'cl-opt';
+      b.setAttribute('role', 'option');
+      b.setAttribute('data-i', i);
+      b.setAttribute('aria-selected', u.id === activeUserId ? 'true' : 'false');
+      b.innerHTML = '<span class="cl-user-dot" style="background:' + esc(safeColor(u.color)) + '"></span>' +
+        '<span class="cl-opt-name">' + esc(u.name) + '</span>' +
+        svgIcon('check', 16, 'cl-opt-check');
+      // マウスを重ねたらそれが最優先。キーボードで進めた位置は上書きしてよい
+      b.addEventListener('mousemove', function () { setComboIndex(i, false); });
+      b.addEventListener('mousedown', function (e) { e.preventDefault(); });
+      b.addEventListener('click', function () { chooseComboIndex(i); });
+      li.appendChild(b);
+      ul.appendChild(li);
+    });
+    if (empty) empty.hidden = comboItems.length > 0;
+    ul.hidden = comboItems.length === 0;
+    if (comboIndex >= comboItems.length) comboIndex = comboItems.length - 1;
+    if (comboIndex < 0 && comboItems.length) {
+      var cur = comboItems.map(function (u) { return u.id; }).indexOf(activeUserId);
+      comboIndex = cur >= 0 ? cur : 0;
     }
-    input.blur();
+    paintComboIndex();
+  }
+
+  function paintComboIndex() {
+    var opts = document.querySelectorAll('#cl-user-list .cl-opt');
+    for (var i = 0; i < opts.length; i++) opts[i].classList.toggle('cl-opt-on', i === comboIndex);
+  }
+
+  function setComboIndex(i, scroll) {
+    if (!comboItems.length) return;
+    comboIndex = (i + comboItems.length) % comboItems.length;
+    paintComboIndex();
+    if (scroll) {
+      var el = document.querySelectorAll('#cl-user-list .cl-opt')[comboIndex];
+      if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  function chooseComboIndex(i) {
+    var u = comboItems[i];
+    if (!u) return;
+    setActiveUser(u.id);
+    setCombo(false);
+  }
+
+  function setCombo(open) {
+    var combo = $('#cl-combo'), pop = $('#cl-user-pop'), btn = $('#cl-user-btn'), input = $('#cl-user');
+    if (!combo || !pop || !btn) return;
+    comboOpen = !!open;
+    combo.classList.toggle('open', comboOpen);
+    pop.hidden = !comboOpen;
+    btn.setAttribute('aria-expanded', comboOpen ? 'true' : 'false');
+    if (comboOpen) {
+      if (input) input.value = '';
+      comboIndex = -1;
+      renderComboList();
+      if (input) input.focus();
+    } else {
+      comboIndex = -1;
+      paintUserCombo();
+    }
   }
 
   // 既存の色とかぶらないパレットの先頭から割り当て、尽きたらランダムへ逃がす
@@ -1526,16 +1960,62 @@ kbd.cl-k{ display:inline-block; background:#fff; border:1px solid #cbd5e1; borde
     return '#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0');
   }
 
-  // Enter／⌘+Enter で確定。Escapeや、確定せず離れたとき（blur）は入力中の文字を捨てて
-  // いまの操作中ユーザーの名前に戻す（コンボの値と activeUserId がずれたままにしない）
   function initUserCombo() {
-    var input = $('#cl-user');
-    if (!input) return;
-    input.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') { e.preventDefault(); resolveUserInput(); }
-      else if (e.key === 'Escape') { e.preventDefault(); paintUserCombo(); input.blur(); }
+    var input = $('#cl-user'), btn = $('#cl-user-btn');
+    if (btn) btn.addEventListener('click', function () { setCombo(!comboOpen); });
+    if (input) {
+      input.addEventListener('input', function () { comboIndex = -1; renderComboList(); });
+      input.addEventListener('keydown', function (e) {
+        if (e.isComposing || e.keyCode === 229) return;   // IME変換中の Enter は確定に使わせない
+        // 上と左で1つ上、下と右で1つ下。どちらの手癖でも動くようにしておく
+        if (e.key === 'ArrowDown' || e.key === 'ArrowRight') { e.preventDefault(); setComboIndex(comboIndex + 1, true); }
+        else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') { e.preventDefault(); setComboIndex(comboIndex - 1, true); }
+        else if (e.key === 'Enter') { e.preventDefault(); chooseComboIndex(comboIndex); }
+        else if (e.key === 'Escape') { e.preventDefault(); setCombo(false); if (btn) btn.focus(); }
+        else if (e.key === 'Tab') { setCombo(false); }
+      });
+    }
+    // 外側を押したら閉じる。ここで確定はしない（選んでいないのに人が変わらないように）
+    document.addEventListener('mousedown', function (e) {
+      if (!comboOpen) return;
+      if (e.target.closest && e.target.closest('#cl-combo')) return;
+      setCombo(false);
     });
-    input.addEventListener('blur', function () { paintUserCombo(); });
+  }
+
+  // 新しいユーザーの追加。名前が空なら何もしない。同名がいたらそのまま選ぶだけにする
+  function addUserFromForm() {
+    var nameEl = $('#cl-new-name'), colorEl = $('#cl-new-color');
+    if (!nameEl) return;
+    var n = nameEl.value.trim();
+    if (!n) { nameEl.focus(); return; }
+    var hit = users.filter(function (u) { return u.name.trim().toLowerCase() === n.toLowerCase(); })[0];
+    if (hit) {
+      setActiveUser(hit.id);
+      nameEl.value = '';
+      flashLabel($('[data-cl="add-user"]'), '同じ名前がいます');
+      return;
+    }
+    var id = 'u-' + Date.now().toString(36);
+    commit({ type: 'user-add', user: { id: id, name: n, color: safeColor(colorEl && colorEl.value) } });
+    setActiveUser(id);
+    nameEl.value = '';
+    nameEl.focus();
+  }
+
+  // 「ユーザーを管理」は、押した人がまず新しい名前を打ちたいことが多い。
+  // 開いた瞬間に入力欄へ入れて、もう一度クリックさせない
+  function setMaster(open) {
+    var panel = $('#cl-master'), btn = $('#cl-master-btn');
+    if (!panel) return;
+    var will = open === undefined ? !panel.classList.contains('open') : !!open;
+    panel.classList.toggle('open', will);
+    if (btn) btn.setAttribute('aria-expanded', will ? 'true' : 'false');
+    if (will) {
+      if (comboOpen) setCombo(false);
+      var n = $('#cl-new-name');
+      if (n) requestAnimationFrame(function () { n.focus(); });
+    }
   }
 
   function updateUser(id, field, value) {
@@ -1565,7 +2045,7 @@ kbd.cl-k{ display:inline-block; background:#fff; border:1px solid #cbd5e1; borde
 
   /* ==========================================
      使い方ガイド
-     出るのは左下の「📖 使い方」を押したときだけ。初回自動表示や「もう見ない」の記憶はしない
+     出るのは左下の「使い方」を押したときだけ。初回自動表示や「もう見ない」の記憶はしない
      （受け取った人が読みたいときに読む物であって、割り込んでよい物ではない）。
      各ページは静的マークアップで持ち、ここは表示中インデックスの付け替えだけを行う。
      JSでDOMを組み立てないので、書き出しても増殖しない
@@ -1618,10 +2098,15 @@ kbd.cl-k{ display:inline-block; background:#fff; border:1px solid #cbd5e1; borde
     var typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable);
 
     // 保存とコピーは、入力中でもガイドを見ている間でも効くグローバル操作。
-    // ブラウザ既定の「ページを保存」を横取りするので、必ず preventDefault する
+    // ブラウザ既定の「ページを保存」を横取りするので、必ず preventDefault する。
+    // ★ Shift 付きを先に見る。順番を逆にすると ⌘+Shift+S が「保存」に吸われて、
+    //   コピーが永久に動かない（判定が緩い方を先に置いてはいけない）
     if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.isComposing && e.keyCode !== 229) {
-      if (e.key === 's' || e.key === 'S') { e.preventDefault(); exportHTML(); return; }
-      if (e.shiftKey && (e.key === 'c' || e.key === 'C')) { e.preventDefault(); copyReview(); return; }
+      if (e.key === 's' || e.key === 'S') {
+        e.preventDefault();
+        if (e.shiftKey) copyReview(); else exportHTML();
+        return;
+      }
     }
 
     // ガイドを開いている間は、資料側のショートカットを全部止めてページ送りだけを受ける
@@ -1632,6 +2117,8 @@ kbd.cl-k{ display:inline-block; background:#fff; border:1px solid #cbd5e1; borde
       return;
     }
     if (e.key === 'Escape') {
+      if (openMenuId) { closeMenu(); return; }
+      if (comboOpen) { setCombo(false); return; }
       if (draft) { cancelDraft(); return; }
       if (pinMode) { setPinMode(false); return; }
       if (root.classList.contains('cl-open') && !typing) setSidebar(false);
@@ -1640,6 +2127,8 @@ kbd.cl-k{ display:inline-block; background:#fff; border:1px solid #cbd5e1; borde
     // Cmd+C / Ctrl+C などの修飾キー付き、IME変換中、入力中は無反応にする
     if (typing || e.metaKey || e.ctrlKey || e.altKey || e.isComposing || e.keyCode === 229) return;
     if (e.key === 'c' || e.key === 'C') { e.preventDefault(); setPinMode(!pinMode); }
+    // L でコメント一覧（＝コメントスレッド）そのものを開閉する
+    else if (e.key === 'l' || e.key === 'L') { e.preventDefault(); setSidebar(!root.classList.contains('cl-open')); }
     // J / K で一覧の並び順どおりに次・前のコメントへ。Shift 併用で完了を飛ばす
     else if (e.key === 'j' || e.key === 'J') { e.preventDefault(); jump(1, e.shiftKey); }
     else if (e.key === 'k' || e.key === 'K') { e.preventDefault(); jump(-1, e.shiftKey); }
@@ -1901,8 +2390,13 @@ kbd.cl-k{ display:inline-block; background:#fff; border:1px solid #cbd5e1; borde
     var b = $('#cl-badge');
     var open = comments.filter(function (c) { return !isDone(c); }).length;
     b.textContent = comments.length;
-    b.title = '未完了 ' + open + ' / 全 ' + comments.length;
     b.style.display = comments.length ? 'flex' : 'none';
+    var cnt = $('#cl-count');
+    if (cnt) {
+      cnt.textContent = comments.length
+        ? '未完了 ' + open + ' 件 / 全 ' + comments.length + ' 件'
+        : 'コメント 0 件';
+    }
   }
 
   function render() {
@@ -1966,46 +2460,75 @@ kbd.cl-k{ display:inline-block; background:#fff; border:1px solid #cbd5e1; borde
     };
 
     var quote = c.type === 'pin'
-      ? '<div class="cl-quote" style="border-left-color:transparent;padding-left:0;background:none;">📍 画面へのピン留め</div>'
+      ? '<div class="cl-quote cl-quote-pin">' + svgIcon('pin', 16) + '画面へのピン留め</div>'
       : '<div class="cl-quote">' + esc(c.quote) + '</div>';
 
     var reps = repliesOf(c).map(function (r) {
       return '<div class="cl-reply">' +
-        '<div class="cl-rmeta"><span style="font-weight:700;color:' + esc(safeColor(r.color)) + '">' + esc(r.author) + '</span>' +
+        '<div class="cl-rmeta">' +
+        '<span class="cl-author-dot" style="background:' + esc(safeColor(r.color)) + '"></span>' +
+        '<span style="font-weight:700;color:var(--cl-gray-800)">' + esc(r.author) + '</span>' +
         '<span>' + esc(fmtShort(r.updatedAt || r.date)) + '</span>' +
-        '<button class="cl-ibtn" data-cl="reply-edit" data-id="' + esc(c.id) + '" data-rid="' + esc(r.id) + '" title="返信を編集">✏️</button>' +
-        '<button class="cl-ibtn del" data-cl="reply-del" data-id="' + esc(c.id) + '" data-rid="' + esc(r.id) + '" title="返信を削除">🗑️</button>' +
+        '<button class="cl-iconbtn" style="width:24px;height:24px" data-cl="reply-edit" data-id="' + esc(c.id) + '" data-rid="' + esc(r.id) + '" data-cl-tip="返信を編集" aria-label="返信を編集">' + svgIcon('edit', 16) + '</button>' +
+        '<button class="cl-iconbtn" style="width:24px;height:24px" data-danger data-cl="reply-del" data-id="' + esc(c.id) + '" data-rid="' + esc(r.id) + '" data-cl-tip="返信を削除" aria-label="返信を削除">' + svgIcon('trash', 16) + '</button>' +
         '</div><div class="cl-rtext">' + esc(r.text) + '</div></div>';
     }).join('');
 
+    // 完了はレビューの往復でいちばん使うのでボタンのまま出し、
+    // めったに使わない編集・削除は「…」の中へ落とす（表計算ソフトのコメントと同じ形）
     item.innerHTML =
       '<div class="cl-meta"><div class="cl-meta-l">' +
-        '<span class="cl-author" style="background:' + esc(safeColor(c.color)) + '">' + esc(c.author) + '</span>' +
-        '<button class="cl-label ' + (lab || 'none') + '" data-cl="label" data-id="' + esc(c.id) +
-          '" title="優先度（クリックで must → want → nit → なし）">' + (lab || '＋ラベル') + '</button>' +
-        '<span>' + (edited ? '✎ ' : '') + esc(when) + '</span>' +
+        '<span class="cl-author"><span class="cl-author-dot" style="background:' + esc(safeColor(c.color)) + '"></span>' + esc(c.author) + '</span>' +
+        '<button class="cl-chip ' + (lab || 'none') + '" data-cl="label" data-id="' + esc(c.id) +
+          '" data-cl-tip="優先度：必須 → 要望 → 軽微 → なし" data-cl-tipdown>' +
+          (lab ? esc(LABEL_JA[lab]) : '優先度') + '</button>' +
+        '<span class="cl-when">' + (edited ? '編集済 ' : '') + esc(when) + '</span>' +
       '</div><div class="cl-meta-r">' +
-        '<button class="cl-ibtn" data-cl="resolve" data-id="' + esc(c.id) + '" title="' +
-          (done ? '完了を取り消す' : '完了にする') + '">' + (done ? '🔄' : '✅') + '</button>' +
-        '<button class="cl-ibtn" data-cl="edit" data-id="' + esc(c.id) + '" title="編集">✏️</button>' +
-        '<button class="cl-ibtn del" data-cl="del" data-id="' + esc(c.id) + '" title="削除">🗑️</button>' +
+        '<button class="cl-iconbtn' + (done ? ' on' : '') + '" data-cl="resolve" data-id="' + esc(c.id) +
+          '" data-cl-tip="' + (done ? '完了を取り消す' : '完了にする') + '" aria-label="' +
+          (done ? '完了を取り消す' : '完了にする') + '">' + svgIcon(done ? 'undo' : 'check', 20) + '</button>' +
+        '<button class="cl-iconbtn" data-cl="menu" data-id="' + esc(c.id) +
+          '" aria-haspopup="menu" aria-expanded="' + (openMenuId === c.id ? 'true' : 'false') +
+          '" data-cl-tip="編集・削除・完了" aria-label="その他の操作">' + svgIcon('more', 20) + '</button>' +
+        (openMenuId === c.id ? menuHTML(c, done) : '') +
       '</div></div>' + quote +
       '<div class="cl-body">' + esc(c.text) + '</div>' +
-      (orphan ? '<div class="cl-orphan">⚠️ 本文中に対象が見つかりません。資料の更新で該当箇所が書き換わった（指摘が反映された）可能性があります</div>' : '') +
-      (done ? '<div class="cl-done-note">✅ 完了' + (c.resolvedBy ? '（' + esc(c.resolvedBy) + '）' : '') +
+      (orphan ? '<div class="cl-orphan">' + svgIcon('warn', 16) +
+        '<div>本文中に対象が見つかりません。資料の更新で該当箇所が書き換わった（指摘が反映された）可能性があります</div></div>' : '') +
+      (done ? '<div class="cl-done-note">' + svgIcon('check', 16) + '完了' + (c.resolvedBy ? '（' + esc(c.resolvedBy) + '）' : '') +
               (fmtShort(c.resolvedAt) ? ' ' + esc(fmtShort(c.resolvedAt)) : '') + '</div>' : '') +
       (reps ? '<div class="cl-replies">' + reps + '</div>' : '');
 
     if (draft && draft.replyTo === c.id) item.appendChild(replyDraft(c));
     else {
       var rb = document.createElement('button');
-      rb.className = 'cl-reply-btn';
+      rb.className = 'cl-btn cl-reply-btn';
+      rb.setAttribute('data-type', 'text');
+      rb.setAttribute('data-size', 'xs');
       rb.setAttribute('data-cl', 'reply');
       rb.setAttribute('data-id', c.id);
-      rb.textContent = '💬 返信';
+      rb.innerHTML = svgIcon('reply', 16) + '返信';
       item.appendChild(rb);
     }
     return item;
+  }
+
+  function menuHTML(c, done) {
+    return '<div class="cl-menu" role="menu">' +
+      '<button class="cl-menu-item" role="menuitem" data-cl="edit" data-id="' + esc(c.id) + '">' +
+        svgIcon('edit', 18) + '編集</button>' +
+      '<button class="cl-menu-item" role="menuitem" data-danger data-cl="del" data-id="' + esc(c.id) + '">' +
+        svgIcon('trash', 18) + '削除</button>' +
+      '<div class="cl-menu-sep"></div>' +
+      '<button class="cl-menu-item" role="menuitem" data-cl="resolve" data-id="' + esc(c.id) + '">' +
+        svgIcon(done ? 'undo' : 'check', 18) + (done ? '完了を取り消す' : '完了にする') + '</button>' +
+      '</div>';
+  }
+
+  function closeMenu() {
+    if (openMenuId === null) return;
+    openMenuId = null;
+    render();
   }
 
   function replyDraft(c) {
@@ -2018,9 +2541,9 @@ kbd.cl-k{ display:inline-block; background:#fff; border:1px solid #cbd5e1; borde
     box.className = 'cl-rdraft';
     box.innerHTML =
       '<textarea id="cl-reply-text" placeholder="返信を入力…"></textarea>' +
-      '<div class="cl-draft-actions"><span class="cl-hint">Cmd/Ctrl + Enter で保存</span>' +
-      '<span><button class="cl-btn cancel" data-cl="rdraft-cancel">キャンセル</button> ' +
-      '<button class="cl-btn save" data-cl="rdraft-save">保存</button></span></div>';
+      '<div class="cl-draft-actions"><span class="cl-hint">⌘/Ctrl + Enter で保存</span>' +
+      '<span><button class="cl-btn" data-type="outline" data-size="xs" data-cl="rdraft-cancel">キャンセル</button>' +
+      '<button class="cl-btn" data-type="solid-fill" data-size="xs" data-cl="rdraft-save">保存</button></span></div>';
     var ta = box.querySelector('textarea');
     ta.value = initial;
     ta.addEventListener('keydown', function (e) {
@@ -2038,11 +2561,11 @@ kbd.cl-k{ display:inline-block; background:#fff; border:1px solid #cbd5e1; borde
     var card = document.createElement('div');
     card.className = 'cl-item cl-draft';
     card.innerHTML =
-      '<div style="font-size:11px;color:var(--cl-mid);margin-bottom:8px;font-weight:700;">編集中…</div>' +
+      '<div class="cl-draft-head">' + svgIcon('pencilSm', 16) + '編集中</div>' +
       '<textarea id="cl-draft-text" placeholder="コメントを入力…"></textarea>' +
-      '<div class="cl-draft-actions"><span class="cl-hint">Cmd/Ctrl + Enter で保存</span>' +
-      '<span><button class="cl-btn cancel" data-cl="draft-cancel">キャンセル</button> ' +
-      '<button class="cl-btn save" data-cl="draft-save">保存</button></span></div>';
+      '<div class="cl-draft-actions"><span class="cl-hint">⌘/Ctrl + Enter で保存</span>' +
+      '<span><button class="cl-btn" data-type="outline" data-size="xs" data-cl="draft-cancel">キャンセル</button>' +
+      '<button class="cl-btn" data-type="solid-fill" data-size="xs" data-cl="draft-save">保存</button></span></div>';
     var ta = card.querySelector('textarea');
     ta.value = initial || '';
     ta.addEventListener('keydown', function (e) {
@@ -2122,7 +2645,12 @@ kbd.cl-k{ display:inline-block; background:#fff; border:1px solid #cbd5e1; borde
     if (pinMode) setPinMode(false);
     if (draft) cancelDraft();
     setSidebar(false);
-    $('#cl-master').classList.remove('open');
+    // 開きっぱなしのポップアップは、そのまま書き出すと「開いた状態」が焼き込まれる。
+    // コンボの候補一覧はJSで組み立てているので、閉じずに出すとユーザー名が二重に入る
+    setCombo(false);
+    openMenuId = null;
+    setMaster(false);
+    var ul = $('#cl-user-list'); if (ul) ul.innerHTML = '';
     $('#cl-toolbar').style.display = 'none';
     // ガイドは静的マークアップなので閉じて1ページ目に戻すだけで、書いたときの状態に揃う
     setGuide(false);
@@ -2173,8 +2701,11 @@ kbd.cl-k{ display:inline-block; background:#fff; border:1px solid #cbd5e1; borde
     clearBackup();                // ダウンロードした時点で退避データは役目を終える
 
     // 「保存」と表示はしていても、実体はこのパソコンへのダウンロード。元のファイルは書き換わらないので、
-    // 相手に見せるにはいま落ちたファイルそのものを送る必要があることを、保存のたびに毎回念押しする
-    showToast('📥 <strong>保存しました。</strong>ただし保存先は、あなたのパソコンの中だけです。<br>' +
+    // 相手に見せるにはいま落ちたファイルそのものを送る必要があることを、保存のたびに毎回念押しする。
+    // 出す位置は画面の上。保存ボタンは右下にあるが、押した直後に視線が行くのは画面の中央から上で、
+    // 最下部に出していた頃は「保存したのに何も起きていない」と読まれて素通りされていた
+    showToast('<div class="cl-toast-head">' + svgIcon('check', 18) + '保存しました</div>' +
+      'ただし保存先は、<strong>あなたのパソコンの中だけ</strong>です。' +
       '相手にコメントを見せるには、<strong>いま保存されたこのファイルを</strong>Slackやメールでそのまま送ってください。');
   }
 
@@ -2188,15 +2719,17 @@ kbd.cl-k{ display:inline-block; background:#fff; border:1px solid #cbd5e1; borde
     var t = e.target.closest ? e.target.closest('[data-cl]') : null;
     if (!t) return;
     var a = t.getAttribute('data-cl');
+    // 「…」以外を押したら、開きっぱなしのメニューはたたむ
+    if (a !== 'menu' && openMenuId && !t.closest('.cl-menu')) openMenuId = null;
     if (a === 'close') setSidebar(false);
     else if (a === 'toggle-sidebar') setSidebar(!root.classList.contains('cl-open'));
     else if (a === 'pinmode') setPinMode(!pinMode);
-    else if (a === 'master') $('#cl-master').classList.toggle('open');
-    else if (a === 'add-user') {
-      var n = $('#cl-new-name').value.trim();
-      if (!n) return;
-      commit({ type: 'user-add', user: { id: 'u-' + Date.now().toString(36), name: n, color: safeColor($('#cl-new-color').value) } });
-      $('#cl-new-name').value = '';
+    else if (a === 'master') setMaster();
+    else if (a === 'add-user') addUserFromForm();
+    else if (a === 'menu') {
+      var mid = t.getAttribute('data-id');
+      openMenuId = openMenuId === mid ? null : mid;
+      render();
     }
     else if (a === 'edit') editComment(t.getAttribute('data-id'));
     else if (a === 'del') deleteComment(t.getAttribute('data-id'));
@@ -2224,13 +2757,35 @@ kbd.cl-k{ display:inline-block; background:#fff; border:1px solid #cbd5e1; borde
   $('#cl-toolbar').addEventListener('mousedown', function (e) { e.preventDefault(); startTextComment(); });
   $('#cl-toast').addEventListener('click', function () { this.classList.remove('show'); });
 
+  // 新しいユーザーの名前欄も Enter／⌘+Enter で確定する。
+  // 「入力したのに追加ボタンを押していない」で消えるのが、この手の欄で一番多い取りこぼし
+  (function () {
+    var n = $('#cl-new-name');
+    if (!n) return;
+    n.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
+      e.preventDefault();
+      addUserFromForm();
+    });
+  })();
+
+  // カードの外側を押したら「…」メニューを閉じる
+  document.addEventListener('mousedown', function (e) {
+    if (!openMenuId) return;
+    if (e.target.closest && e.target.closest('.cl-menu, [data-cl="menu"]')) return;
+    closeMenu();
+  });
+
   // デバッグ・テスト用の入口
   window.__commentLayer = {
     version: VERSION,
     get comments() { return comments; },
     get users() { return users; },
     get activeUserId() { return activeUserId; },
-    setActiveUser: setActiveUser, resolveUserInput: resolveUserInput,
+    get openMenuId() { return openMenuId; },
+    get comboOpen() { return comboOpen; },
+    setActiveUser: setActiveUser,
+    setCombo: setCombo, setMaster: setMaster, addUserFromForm: addUserFromForm, deleteUser: deleteUser,
     setSidebar: setSidebar, setPinMode: setPinMode,
     focusFromList: focusFromList, focusFromDoc: focusFromDoc,
     startTextComment: startTextComment, saveDraft: saveDraft, cancelDraft: cancelDraft,
@@ -2242,10 +2797,11 @@ kbd.cl-k{ display:inline-block; background:#fff; border:1px solid #cbd5e1; borde
     setGuide: setGuide, guideGo: guideGo, guideNext: guideNext,
     get guideStep() { return guideStep; },
     setSort: function (m) {
-      sortMode = m === 'doc' ? 'doc' : 'updated';
+      sortMode = m === 'priority' ? 'priority' : 'updated';
       var s = $('#cl-sort'); if (s) s.value = sortMode;
       render();
     },
+    get sortMode() { return sortMode; },
     // 検証用。レイヤーが「資料の本文」と見なしているテキストそのもの。
     // UIを足したときの除外漏れは、テスト側でセレクタを書き写すと一緒に漏れるので、
     // 本体が使っている関数をそのまま外に出して突き合わせる
@@ -2255,4 +2811,4 @@ kbd.cl-k{ display:inline-block; background:#fff; border:1px solid #cbd5e1; borde
   };
 })();
 </script>
-<!-- ===== COMMENT-LAYER v2.4.1 : END ===== -->
+<!-- ===== COMMENT-LAYER v2.5.0 : END ===== -->

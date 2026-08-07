@@ -532,16 +532,27 @@ try {
      r27.本文が変わった && r27.作成日時を保つ && r27.更新が進んだ && r27.先頭に来た && r27.元は先頭でなかった,
      JSON.stringify(r27));
 
-  // 28. ラベルの巡回（must → want → nit → なし）。ラベル変更では並び順を動かさない
+  // 28. 優先度の巡回（must → want → nit → なし）。優先度の変更では並び順を動かさない。
+  //     保存値は must/want/nit のまま（過去データとの互換）、画面表示だけ日本語であること
   const r28 = JSON.parse(await b.evalJS(`
     const at = id => __commentLayer.comments.filter(x => x.id === id)[0];
-    const upd0 = at('${s26.a}').updatedAt, seq = [];
-    for (let i = 0; i < 4; i++) { __commentLayer.cycleLabel('${s26.a}'); seq.push(at('${s26.a}').label || 'なし'); }
-    return JSON.stringify({ seq, chip: !!document.querySelector('.cl-label'), updatedAt不変: at('${s26.a}').updatedAt === upd0 });
+    const upd0 = at('${s26.a}').updatedAt, seq = [], ja = [];
+    for (let i = 0; i < 4; i++) {
+      __commentLayer.cycleLabel('${s26.a}');
+      seq.push(at('${s26.a}').label || 'なし');
+      const chip = document.querySelector('#cl-item-${s26.a} .cl-chip');
+      ja.push(chip ? chip.textContent.trim() : '(なし)');
+    }
+    return JSON.stringify({ seq, ja, chip: !!document.querySelector('.cl-chip'),
+      英語が残っていない: ja.every(t => !/must|want|nit/i.test(t)),
+      updatedAt不変: at('${s26.a}').updatedAt === upd0 });
   `));
-  ok('ラベルが must → want → nit → なし と巡回し、並び順は動かない',
+  ok('優先度が 必須 → 要望 → 軽微 → なし と巡回し、並び順は動かない',
      JSON.stringify(r28.seq) === JSON.stringify(['must', 'want', 'nit', 'なし']) && r28.chip && r28.updatedAt不変,
      JSON.stringify(r28.seq));
+  ok('優先度チップの表示は日本語で、英語（must/want/nit）が画面に出ない',
+     JSON.stringify(r28.ja) === JSON.stringify(['必須', '要望', '軽微', '優先度']) && r28.英語が残っていない,
+     JSON.stringify(r28.ja));
 
   // 29. 返信：Cmd+Enter で保存され、親スレッドの最終更新が進む
   const r29 = JSON.parse(await b.evalJS(IDS + `
@@ -617,28 +628,51 @@ try {
        && r30b.after.color === '#654321' && r30b.shown,
      JSON.stringify(r30b));
 
-  // 31. 並び順の切り替え：更新順と文書順で並びが変わり、文書順は本文の登場順になる
+  // 31. 並び順の切り替え：更新順 ↔ 優先度順。
+  //     優先度順は 必須 → 要望 → 軽微 → なし の順で、同じ優先度の中は更新順のまま。
+  //     完了はどちらの並びでも最下部（v2.5 で「文書順」は廃止した）
   const r31 = JSON.parse(await b.evalJS(IDS + `
+    const setLabel = (id, want) => {
+      const at = () => __commentLayer.comments.filter(x => x.id === id)[0].label || '';
+      for (let i = 0; i < 5 && at() !== want; i++) __commentLayer.cycleLabel(id);
+      return at();
+    };
+    // 更新順で先頭に居るものを「軽微」、後ろのものを「必須」にして、
+    // 優先度順にすると順番が入れ替わることを見る
     __commentLayer.setSort('updated');
-    const u = ids();
-    __commentLayer.setSort('doc');
-    const d = ids();
-    const top = (arr, x, y) => arr.indexOf(x) < arr.indexOf(y);
-    // 本文中の実際の縦位置
-    const posOf = id => { const e = document.querySelector('.comment-highlight[data-id="'+id+'"]'); return e ? e.getBoundingClientRect().top + scrollY : Infinity; };
+    const u = ids().filter(id => !__commentLayer.comments.filter(x => x.id === id)[0].resolved);
+    const first = u[0], last = u[u.length - 1];
+    setLabel(first, 'nit');
+    setLabel(last, 'must');
+    __commentLayer.setSort('priority');
+    const p = ids();
+    const rank = id => { const l = __commentLayer.comments.filter(x => x.id === id)[0].label;
+      return ['must','want','nit'].indexOf(l) < 0 ? 3 : ['must','want','nit'].indexOf(l); };
+    const open = p.filter(id => !__commentLayer.comments.filter(x => x.id === id)[0].resolved);
+    let 単調 = true;
+    for (let i = 1; i < open.length; i++) if (rank(open[i]) < rank(open[i - 1])) 単調 = false;
+    const 完了は最下部 = p.every((id, i) =>
+      !__commentLayer.comments.filter(x => x.id === id)[0].resolved ||
+      p.slice(i).every(j => __commentLayer.comments.filter(x => x.id === j)[0].resolved));
     __commentLayer.setSort('updated');
     return JSON.stringify({
-      更新順: u.indexOf('${s26.c}') + ':' + u.indexOf('${s26.a}'),
-      文書順が本文どおり: top(d, '${s26.a}', '${s26.c}') === (posOf('${s26.a}') < posOf('${s26.c}')),
-      並びが変わる: JSON.stringify(u) !== JSON.stringify(d)
+      優先度の高い順: 単調,
+      必須が軽微より上: p.indexOf(last) < p.indexOf(first),
+      並びが変わる: JSON.stringify(u) !== JSON.stringify(open),
+      完了は最下部,
+      docは無効: (__commentLayer.setSort('doc'), __commentLayer.sortMode === 'updated')
     });
   `));
-  ok('並び順を文書順へ切り替えると本文の登場順になる',
-     r31.文書順が本文どおり && r31.並びが変わる, JSON.stringify(r31));
+  ok('並び順を優先度順へ切り替えると 必須 → 要望 → 軽微 → なし の順になる',
+     r31.優先度の高い順 && r31.必須が軽微より上 && r31.並びが変わる, JSON.stringify(r31));
+  ok('優先度順でも完了は最下部にまとまり、廃止した「文書順」は指定しても無視される',
+     r31.完了は最下部 && r31.docは無効, JSON.stringify(r31));
 
   // 32. 指摘コピー：完了・ラベル・返信が明示され、書き出しJSONにも完了状態が残る
   const r32 = JSON.parse(await b.evalJS(`
-    __commentLayer.cycleLabel('${s26.a}');                       // なし → must
+    const labOf = id => __commentLayer.comments.filter(x => x.id === id)[0].label || '';
+    for (let i = 0; i < 5 && labOf('${s26.a}') !== 'must'; i++) __commentLayer.cycleLabel('${s26.a}');
+    if (__commentLayer.comments.filter(x => x.id === '${s26.c}')[0].resolved) __commentLayer.toggleResolve('${s26.c}');
     __commentLayer.toggleResolve('${s26.c}');                    // Cを完了にする
     const md = __commentLayer.buildReviewMarkdown();
     let cap = null; const o = URL.createObjectURL; URL.createObjectURL = x => { cap = x; return 'blob:t'; };
@@ -653,7 +687,7 @@ try {
       return JSON.stringify({
         md未対応: md.indexOf('状態: 未対応') >= 0,
         md完了: md.indexOf('状態: 完了') >= 0 && md.indexOf('修正不要') >= 0,
-        mdラベル: md.indexOf('[must]') >= 0,
+        mdラベル: md.indexOf('[必須]') >= 0 && !/\\[(must|want|nit)\\]/.test(md),
         md返信: md.indexOf('返信:') >= 0 && md.indexOf('直しました') >= 0,
         md件数: (md.match(/^## 指摘 /gm) || []).length === store.length,
         mdにHTML断片なし: !/<[a-zA-Z][^>]*>/.test(md),
@@ -713,6 +747,33 @@ try {
   ok('ガイドを開いている間は資料側のショートカットが効かない', r33.ショートカット遮断);
   ok('ガイドの文言が本文テキストとして拾われない（引用照合・退避を汚さない）', r33.本文に混入しない);
 
+  // 33b. ガイドのモーダルは、どのページでも大きさが変わらない。
+  //      ページごとに伸び縮みすると「次へ」が毎回動いて押しにくくなる。
+  //      中身が多いページは、モーダルではなく中身側がスクロールする
+  const r33b = JSON.parse(await b.evalJS(`
+    document.querySelector('[data-cl="guide"]').click();
+    const panel = document.querySelector('#cl-guide .cl-g-panel');
+    const body = document.querySelector('#cl-guide .cl-g-body');
+    const n = document.querySelectorAll('#cl-guide .cl-g-step').length;
+    const sizes = [];
+    let スクロールするページ = 0;
+    for (let i = 0; i < n; i++) {
+      __commentLayer.guideGo(i);
+      const r = panel.getBoundingClientRect();
+      sizes.push(Math.round(r.width) + 'x' + Math.round(r.height));
+      if (body.scrollHeight > body.clientHeight + 1) スクロールするページ++;
+    }
+    __commentLayer.setGuide(false);
+    const r0 = sizes[0].split('x').map(Number);
+    return JSON.stringify({ sizes, 全ページ同じ: new Set(sizes).size === 1,
+      スクロールするページ, 幅: r0[0], 高さ: r0[1],
+      画面に収まる: r0[1] <= window.innerHeight && r0[0] <= window.innerWidth });
+  `));
+  ok('使い方ガイドのモーダルは、どのページでも大きさが変わらない',
+     r33b.全ページ同じ, JSON.stringify(r33b.sizes));
+  ok('モーダルは画面に収まり、中身が多いページはモーダルではなく中身側がスクロールする',
+     r33b.画面に収まる && r33b.スクロールするページ > 0, JSON.stringify(r33b));
+
   // 34. 書き出しにガイドの表示状態が焼き込まれない（開いたまま書き出しても閉じた状態で保存される）
   const r34 = JSON.parse(await b.evalJS(`
     __commentLayer.setGuide(true);
@@ -757,23 +818,48 @@ try {
   ok('⌘/Ctrl+Sで保存が実行され、確認ダイアログを挟まない',
      r35.既定動作を止めた && r35.保存が呼ばれた && b.dialog.log.length === 0, JSON.stringify(r35));
 
-  // 36. ⌘/Ctrl+Shift+C で「指摘をコピー」が実行される（素のCはピンモードに横取りされない）
+  // 36. ⌘/Ctrl+Shift+S で「指摘をコピー」が実行される。
+  //     ここは判定順序の罠がある。⌘+S（保存）の判定を先に置くと ⌘+Shift+S がそこで吸われ、
+  //     コピーが一生動かないまま「保存された」ので通ってしまう。保存が走っていないことも見る。
+  //     （v2.4 までの ⌘+Shift+C は Chrome の「要素を検証」に取られていて、
+  //      dispatchEvent のテストだけが通り実機では動かなかった）
   const r36 = JSON.parse(await b.evalJS(`
     Object.defineProperty(navigator, 'clipboard', { value: { writeText: function (t) { window.__copied36 = t; return Promise.resolve(); } }, configurable: true });
     // コピー対象が0件だと copyReview() は何もせず抜けるので、判定用に1件だけ仕込む
     __commentLayer.commit({ type: 'add', comment: { id: 'seed-36', type: 'text', text: 'シード',
-      author: 'seed', color: '#0084A3', quote: 'x', date: '2026-01-01T00:00:00.000Z',
+      author: 'seed', color: '#008299', quote: 'x', date: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z', resolved: false } });
+    let cap = null; const o = URL.createObjectURL; URL.createObjectURL = x => { cap = x; return 'blob:t'; };
+    const k = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () {};
     const notPrevented = document.dispatchEvent(new KeyboardEvent('keydown',
-      { key: 'C', metaKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+      { key: 'S', metaKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+    URL.createObjectURL = o; HTMLAnchorElement.prototype.click = k;
     return new Promise(res => setTimeout(() => res(JSON.stringify({
       既定動作を止めた: !notPrevented,
       コピーされた: typeof window.__copied36 === 'string' && window.__copied36.length > 0,
+      保存は走らない: !cap,
       ピンモードは入らない: !document.documentElement.classList.contains('cl-pinmode')
     })), 200));
   `));
-  ok('⌘/Ctrl+Shift+Cで指摘のコピーが実行され、ピンモードには入らない',
-     r36.既定動作を止めた && r36.コピーされた && r36.ピンモードは入らない, JSON.stringify(r36));
+  ok('⌘/Ctrl+Shift+Sで指摘のコピーが実行され、保存やピンモードに横取りされない',
+     r36.既定動作を止めた && r36.コピーされた && r36.保存は走らない && r36.ピンモードは入らない, JSON.stringify(r36));
+
+  // 36b. L でコメント一覧が開閉する（コメントスレッドのショートカット）
+  const r36b = JSON.parse(await b.evalJS(`
+    const open = () => document.documentElement.classList.contains('cl-open');
+    const send = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', bubbles: true, cancelable: true }));
+    __commentLayer.setSidebar(false);
+    send(); const a = open();
+    send(); const b2 = open();
+    // 入力中は効かない（コメント本文に l と打てなくなると困る）
+    __commentLayer.setSidebar(true);
+    const ta = document.createElement('textarea'); document.body.appendChild(ta); ta.focus();
+    ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', bubbles: true, cancelable: true }));
+    const c = open(); ta.remove();
+    return JSON.stringify({ 開く: a, 閉じる: !b2, 入力中は無反応: c });
+  `));
+  ok('Lキーでコメント一覧を開閉でき、入力中は反応しない',
+     r36b.開く && r36b.閉じる && r36b.入力中は無反応, JSON.stringify(r36b));
 
   // 37. 使い方ボタンはドックから独立し、画面左下の単独ボタンになっている
   const r37 = JSON.parse(await b.evalJS(`
@@ -789,43 +875,134 @@ try {
   ok('使い方ボタンはドックから独立した、左下の単独ボタンになっている',
      r37.存在する && r37.ドックの外 && r37.data属性 && r37.左寄り, JSON.stringify(r37));
 
-  // 38. 操作中のユーザーのコンボ化：既存名で確定は切り替えのみ／新しい名前は即席で追加して切り替え／
-  //     書いたコメントはその名前で保存される／Escapeは確定せず、表示を現在のユーザーへ戻す
-  const r38 = JSON.parse(await b.evalJS(PAGE_HELPERS + `
+  // 38. 操作中のユーザーはコンボボックス（プルダウン＋絞り込み）で「選ぶ」だけ。
+  //     v2.4 までは一覧にない名前を打つとその場で人が増えたが、打ち間違い・表記ゆれが
+  //     そのまま別人になるので廃止した。ここでは「増えないこと」を明示的に見る。
+  const r38 = JSON.parse(await b.evalJS(`
+    __commentLayer.setSidebar(true);
+    // 候補を増やしてから絞り込みを試す
+    __commentLayer.commit({ type: 'user-add', user: { id: 'u-t1', name: '検証太郎', color: '#c74700' } });
+    __commentLayer.commit({ type: 'user-add', user: { id: 'u-t2', name: '検証花子', color: '#5c10be' } });
+    const before = __commentLayer.users.length;
+
+    __commentLayer.setCombo(true);
+    const opened = !document.getElementById('cl-user-pop').hidden;
+    const 全件出る = document.querySelectorAll('#cl-user-list .cl-opt').length === before;
+
     const input = document.getElementById('cl-user');
-    const u0count = __commentLayer.users.length;
-    const existingName = __commentLayer.users[0].name;
+    input.value = '花子';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    const 絞り込める = document.querySelectorAll('#cl-user-list .cl-opt').length === 1;
 
-    input.focus(); input.value = '  ' + existingName.toUpperCase() + '  ';
+    // 一覧にない名前を打っても、Enterで人は増えない
+    input.value = 'この名前は存在しない';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    const 空表示 = !document.getElementById('cl-user-empty').hidden;
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
-    const afterExisting = { id: __commentLayer.activeUserId, count: __commentLayer.users.length };
+    const 増えない = __commentLayer.users.length === before;
 
-    input.focus(); input.value = '検証太郎';
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true, cancelable: true }));
-    const created = __commentLayer.users.filter(u => u.name === '検証太郎')[0];
-    const afterCreate = { found: !!created, active: !!created && __commentLayer.activeUserId === created.id,
-                          count: __commentLayer.users.length };
-
-    const q = __vt.uniq(12, []);
-    const cid = q ? __vt.mk(q, 'コンボのテスト') : null;
-    const authored = cid ? __commentLayer.comments.filter(c => c.id === cid)[0].author === '検証太郎' : false;
-
-    const beforeEscapeId = __commentLayer.activeUserId;
-    const beforeEscapeName = __commentLayer.users.filter(u => u.id === beforeEscapeId)[0].name;
-    input.focus(); input.value = 'まだ確定してない名前';
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
-    const afterEscape = { id: __commentLayer.activeUserId, value: input.value, name: beforeEscapeName };
-
-    return JSON.stringify({ afterExisting, u0count, afterCreate, authored, beforeEscapeId, afterEscape });
+    return JSON.stringify({ opened, 全件出る, 絞り込める, 空表示, 増えない, before });
   `));
-  ok('既存の名前をそのまま確定しても新規作成されず、その人に切り替わるだけ',
-     r38.afterExisting.count === r38.u0count && r38.afterExisting.id != null, JSON.stringify(r38.afterExisting));
-  ok('一覧にない名前を確定すると、その場でレビュアーが追加されて切り替わる',
-     r38.afterCreate.found && r38.afterCreate.active, JSON.stringify(r38.afterCreate));
-  ok('操作中のユーザーで書いたコメントは、その名前で保存される', r38.authored, JSON.stringify(r38));
-  ok('Escapeで確定を取り消すと、操作中のユーザーは変わらず入力欄も名前に戻る',
-     r38.afterEscape.id === r38.beforeEscapeId && r38.afterEscape.value === r38.afterEscape.name,
-     JSON.stringify(r38.afterEscape));
+  ok('操作中のユーザーはプルダウンで開き、名前で絞り込める',
+     r38.opened && r38.全件出る && r38.絞り込める, JSON.stringify(r38));
+  ok('一覧にない名前を打ってEnterしても、ユーザーはその場で増えない',
+     r38.空表示 && r38.増えない, JSON.stringify(r38));
+
+  // 38b. キーボード操作：上/左で1つ上、下/右で1つ下、Enterで決定、Escapeで取り消し。
+  //      マウスを重ねたらそれが最優先になる
+  const r38b = JSON.parse(await b.evalJS(`
+    const input = document.getElementById('cl-user');
+    const idxOn = () => [...document.querySelectorAll('#cl-user-list .cl-opt')].findIndex(e => e.classList.contains('cl-opt-on'));
+    const send = key => input.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+
+    __commentLayer.setCombo(true);
+    const i0 = idxOn();
+    send('ArrowDown'); const 下 = idxOn();
+    send('ArrowUp');   const 上 = idxOn();
+    send('ArrowRight'); const 右 = idxOn();
+    send('ArrowLeft');  const 左 = idxOn();
+
+    // マウスを重ねた項目が最優先
+    const opts = document.querySelectorAll('#cl-user-list .cl-opt');
+    opts[opts.length - 1].dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
+    const ホバー優先 = idxOn() === opts.length - 1;
+
+    // Enter でその人に決まる
+    const targetId = __commentLayer.users[__commentLayer.users.length - 1].id;
+    send('Enter');
+    const 決定 = __commentLayer.activeUserId === targetId && document.getElementById('cl-user-pop').hidden;
+
+    // Escape では変わらない
+    const keep = __commentLayer.activeUserId;
+    __commentLayer.setCombo(true);
+    send('ArrowDown');
+    send('Escape');
+    const 取り消し = __commentLayer.activeUserId === keep && document.getElementById('cl-user-pop').hidden;
+
+    // 表示名も追従している
+    const 表示名 = document.getElementById('cl-user-name').textContent
+      === __commentLayer.users.filter(u => u.id === __commentLayer.activeUserId)[0].name;
+    return JSON.stringify({ i0, 下, 上, 右, 左, ホバー優先, 決定, 取り消し, 表示名 });
+  `));
+  ok('コンボボックスは 上/左 で1つ上、下/右 で1つ下へ動き、ホバーが最優先になる',
+     r38b.下 === r38b.i0 + 1 && r38b.上 === r38b.i0 && r38b.右 === r38b.i0 + 1 && r38b.左 === r38b.i0
+       && r38b.ホバー優先, JSON.stringify(r38b));
+  ok('Enterで操作中のユーザーが決まり、Escapeでは変わらない',
+     r38b.決定 && r38b.取り消し && r38b.表示名, JSON.stringify(r38b));
+
+  // 38c. 追加は「ユーザーを管理」だけの仕事。押したら新規名の入力欄にフォーカスが入り、
+  //      Enter でも追加でき、書いたコメントにはその名前が乗る
+  const r38c = JSON.parse(await b.evalJS(PAGE_HELPERS + `
+    __commentLayer.setMaster(false);
+    document.querySelector('[data-cl="master"]').click();
+    const 開いた = document.getElementById('cl-master').classList.contains('open');
+    return new Promise(res => requestAnimationFrame(() => {
+      const フォーカス = document.activeElement === document.getElementById('cl-new-name');
+      const n = document.getElementById('cl-new-name');
+      const before = __commentLayer.users.length;
+      n.value = '追加二郎';
+      n.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      const created = __commentLayer.users.filter(u => u.name === '追加二郎')[0];
+      const q = __vt.uniq(12, []);
+      const cid = q ? __vt.mk(q, 'ユーザー追加のテスト') : null;
+      const authored = cid ? __commentLayer.comments.filter(c => c.id === cid)[0].author === '追加二郎' : false;
+      res(JSON.stringify({ 開いた, フォーカス,
+        追加された: !!created && __commentLayer.users.length === before + 1,
+        切り替わった: !!created && __commentLayer.activeUserId === created.id,
+        authored, 欄が空に戻る: n.value === '' }));
+    }));
+  `));
+  ok('「ユーザーを管理」を押すと開いて、新しい名前の入力欄にカーソルが入る',
+     r38c.開いた && r38c.フォーカス, JSON.stringify(r38c));
+  ok('新しい名前はEnterで追加され、その人に切り替わる',
+     r38c.追加された && r38c.切り替わった && r38c.欄が空に戻る, JSON.stringify(r38c));
+  ok('操作中のユーザーで書いたコメントは、その名前で保存される', r38c.authored, JSON.stringify(r38c));
+
+  // 38d. すでにコメントを書いている人を消すときは確認を挟む（書き込みは残るが名前が一覧から消えるため）
+  const r38d = JSON.parse(await b.evalJS(`
+    const target = __commentLayer.users.filter(u => u.name === '追加二郎')[0];
+    const before = __commentLayer.users.length;
+    let asked = null;
+    const oc = window.confirm;
+    window.confirm = m => { asked = m; return false; };       // まず「やめる」
+    __commentLayer.deleteUser(target.id);
+    const 中止できる = __commentLayer.users.length === before;
+    window.confirm = m => { asked = m; return true; };        // 次は「消す」
+    __commentLayer.deleteUser(target.id);
+    const 消せる = __commentLayer.users.length === before - 1;
+    // コメントを1件も書いていない人は、確認なしで消える
+    __commentLayer.commit({ type: 'user-add', user: { id: 'u-t9', name: '無投稿さん', color: '#618e00' } });
+    let asked2 = false;
+    window.confirm = () => { asked2 = true; return true; };
+    __commentLayer.deleteUser('u-t9');
+    window.confirm = oc;
+    return JSON.stringify({ asked, 中止できる, 消せる,
+      件数を知らせる: !!asked && /件のコメント/.test(asked),
+      無投稿は確認なし: !asked2 && !__commentLayer.users.some(u => u.id === 'u-t9') });
+  `));
+  ok('コメントを書いている人を削除するときは、件数を示して確認する',
+     r38d.件数を知らせる && r38d.中止できる && r38d.消せる, JSON.stringify(r38d));
+  ok('まだ何も書いていない人は、確認なしで削除できる', r38d.無投稿は確認なし, JSON.stringify(r38d));
 
   // 39. 保存ボタンを押すと、確認は挟まず保存が実行され、保存後に共有を促す通知が出る
   const r39 = JSON.parse(await b.evalJS(`
@@ -834,15 +1011,41 @@ try {
     document.getElementById('cl-export').click();
     URL.createObjectURL = o; HTMLAnchorElement.prototype.click = k;
     const toast = document.getElementById('cl-toast');
+    const r = toast.getBoundingClientRect();
     return JSON.stringify({
       保存が呼ばれた: !!cap,
       表示された: toast.classList.contains('show'),
       保存の文言: toast.textContent.indexOf('保存') >= 0,
-      共有を促す文言: toast.textContent.indexOf('送って') >= 0
+      共有を促す文言: toast.textContent.indexOf('送って') >= 0,
+      // 保存の案内は画面上部に出す。最下部だと、押した直後の視線から外れて素通りされる
+      画面上部: r.top < window.innerHeight / 3,
+      画面内に収まる: r.top >= 0 && r.bottom <= window.innerHeight
     });
   `));
   ok('保存ボタンは確認ダイアログを挟まず、保存後にファイル共有を促す通知を出す',
      r39.保存が呼ばれた && r39.表示された && r39.保存の文言 && r39.共有を促す文言, JSON.stringify(r39));
+  ok('保存の通知は画面上部の見える位置に出る',
+     r39.画面上部 && r39.画面内に収まる, JSON.stringify(r39));
+
+  // 40. カードの操作：完了はボタンのまま、編集・削除・完了は「…」メニューに集約されている
+  const r40 = JSON.parse(await b.evalJS(`
+    __commentLayer.setSidebar(true);
+    const id = __commentLayer.comments[0].id;
+    const card = () => document.getElementById('cl-item-' + id);
+    const 完了ボタン = !!card().querySelector('[data-cl="resolve"]');
+    const メニュー前に編集なし = !card().querySelector('[data-cl="edit"]');
+    const メニュー前に削除なし = !card().querySelector('[data-cl="del"]');
+    card().querySelector('[data-cl="menu"]').click();
+    const menu = card().querySelector('.cl-menu');
+    const items = menu ? [...menu.querySelectorAll('.cl-menu-item')].map(e => e.textContent.trim()) : [];
+    return JSON.stringify({ 完了ボタン, メニュー前に編集なし, メニュー前に削除なし, items,
+      メニューはカードの中: !!(menu && card().contains(menu)) });
+  `));
+  ok('カードは完了だけをボタンで出し、編集・削除・完了は「…」に集約されている',
+     r40.完了ボタン && r40.メニュー前に編集なし && r40.メニュー前に削除なし
+       && r40.items.length === 3 && r40.items[0] === '編集' && r40.items[1] === '削除'
+       && /完了/.test(r40.items[2]) && r40.メニューはカードの中,
+     JSON.stringify(r40));
 
   const errs6 = b.events.filter(e => e.method === 'Runtime.exceptionThrown');
   ok('v2.4のテスト中もJSエラーが出ない', errs6.length === 0, errs6.map(e => e.params.exceptionDetails.text).join(' / '));
