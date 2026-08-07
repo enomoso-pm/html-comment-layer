@@ -813,7 +813,8 @@ try {
       __commentLayer.guideGo(i);
       const r = panel.getBoundingClientRect();
       sizes.push(Math.round(r.width) + 'x' + Math.round(r.height));
-      if (body.scrollHeight > body.clientHeight + 1) スクロールするページ++;
+      const cur = document.querySelectorAll('#cl-guide .cl-g-step')[i];
+      if (cur.scrollHeight > cur.clientHeight + 1) スクロールするページ++;
     }
     __commentLayer.setGuide(false);
     const r0 = sizes[0].split('x').map(Number);
@@ -838,56 +839,60 @@ try {
     return cap.text().then(t => JSON.stringify({
       開いた状態が残らない: t.indexOf('cl-guide-open') < 0 || !/<html[^>]*class="[^"]*cl-guide-open/.test(t),
       // 送りアニメ用のクラスは実行時に付くもの。焼き込まれると受け取った側で毎回1ページだけ動く
-      // スタイル定義側にも同じ名前が出るので、要素の class 属性だけを見る
-      送りアニメのクラスが残らない: !/<div[^>]*class="[^"]*cl-g-step[^"]*cl-g-(fwd|back)/.test(t),
+      // 「on」が先頭ページ以外に付いたまま焼き込まれていないか
+      先頭以外にonが残らない: (t.match(/class="cl-g-step on"/g) || []).length <= 1,
       先頭ページに戻る: (t.match(/class="cl-g-step on"/g) || []).length === 1
         && t.indexOf('<div class="cl-g-step on">') < t.indexOf('<div class="cl-g-step">'),
       ガイドが含まれる: t.indexOf('id="cl-guide"') >= 0,
       ページ数: (t.match(/class="cl-g-step/g) || []).length
     }));
   `));
-  ok('書き出したファイルに送りアニメ用のクラスが焼き込まれない', r34.送りアニメのクラスが残らない, JSON.stringify(r34));
+  ok('書き出したファイルで現在ページの印が1つだけになる', r34.先頭以外にonが残らない, JSON.stringify(r34));
 
-  // 34b. トラックパッドの横スクロールは、一振りで1ページだけ送る。
-  //      慣性は振り方しだいで長さが変わるので、固定時間で止める作りだと2ページ送られる
+  // 34b. ページ送りはブラウザ標準の横スクロール＋スナップに任せている。
+  //      自前で「何px動いたら1ページ」を判定する作りは、トラックパッドの慣性の長さが
+  //      振り方しだいで決まらないため、一振りで2ページ送るか次の一振りを取りこぼすかしかない
   const r34b = JSON.parse(await b.evalJS(`
-    const g = document.getElementById('cl-guide');
-    const burst = (dx, n) => { for (let i = 0; i < n; i++)
-      g.dispatchEvent(new WheelEvent('wheel', { deltaX: dx, deltaY: 0, bubbles: true, cancelable: true })); };
-    __commentLayer.setGuide(true); __commentLayer.guideGo(0);
-    burst(30, 25);                       // 慣性込みの一振り（合計750px相当）
-    const 一振り目 = __commentLayer.guideStep;
-    burst(30, 25);                       // 流れが途切れていないので受け付けない
-    const 続けて振っても = __commentLayer.guideStep;
-    return new Promise(res => setTimeout(() => {
-      burst(30, 25);                     // 途切れたあとの二振り目
-      const 二振り目 = __commentLayer.guideStep;
-      burst(-30, 25);
-      const 逆向き = (() => { return null; })();
-      setTimeout(() => {
-        burst(-30, 25);
-        __commentLayer.setGuide(false);
-        res(JSON.stringify({ 一振り目, 続けて振っても, 二振り目, 戻り: __commentLayer.guideStep }));
-      }, 260);
-    }, 260));
+    __commentLayer.setGuide(true);
+    const body = document.querySelector('#cl-guide .cl-g-body');
+    const step = document.querySelector('#cl-guide .cl-g-step');
+    const cb = getComputedStyle(body), cst = getComputedStyle(step);
+    const res = {
+      横に並んでいる: cst.flexBasis === '100%' || Math.abs(step.clientWidth - body.clientWidth) <= 1,
+      横スクロールする: cb.overflowX === 'auto' || cb.overflowX === 'scroll',
+      スナップする: /x/.test(cb.scrollSnapType) && /mandatory/.test(cb.scrollSnapType),
+      一度に1枚まで: cst.scrollSnapStop === 'always',
+      各ページが縦に読める: cst.overflowY === 'auto',
+      全ページが並ぶ: document.querySelectorAll('#cl-guide .cl-g-step').length
+    };
+    // ボタンでの移動がスクロール位置に反映される
+    __commentLayer.guideGo(3);
+    return new Promise(r => setTimeout(() => {
+      res.ボタンで動く = Math.round(body.scrollLeft / body.clientWidth) === 3;
+      // 指で動かした場合は、止まってからページ番号が追いつく
+      body.scrollLeft = body.clientWidth * 6;
+      // 滑らかな移動が終わる時刻は環境しだいなので、固定で待たずに落ち着くまで見る
+      const started = Date.now();
+      const poll = () => {
+        const done = __commentLayer.guideStep === 6;
+        if (done || Date.now() - started > 3000) {
+          res._位置 = body.scrollLeft; res._step = __commentLayer.guideStep;
+          res.スクロールに追従 = done;
+          res.ドットも追従 = [...document.querySelectorAll('#cl-guide .cl-g-dot')]
+            .findIndex(e => e.classList.contains('on')) === 6;
+          __commentLayer.setGuide(false);
+          r(JSON.stringify(res));
+        } else setTimeout(poll, 60);
+      };
+      poll();
+    }, 420));
   `));
-  ok('トラックパッドの横スクロールは、一振りで1ページだけ送る',
-     r34b.一振り目 === 1 && r34b.続けて振っても === 1 && r34b.二振り目 === 2 && r34b.戻り === 1,
+  ok('ページ送りは横スクロール＋スナップで、勢いよく振っても一度に1枚しか進まない',
+     r34b.横に並んでいる && r34b.横スクロールする && r34b.スナップする && r34b.一度に1枚まで,
      JSON.stringify(r34b));
-  ok('書き出したファイルにガイドが1ページ目・閉じた状態で入る',
-     r34.開いた状態が残らない && r34.先頭ページに戻る && r34.ガイドが含まれる && r34.ページ数 === r33.総ページ数,
-     JSON.stringify(r34));
-  try { fsm.unlinkSync(tmpV4); } catch {}
-
-  const errs5 = b.events.filter(e => e.method === 'Runtime.exceptionThrown');
-  ok('完了・返信テスト中もJSエラーが出ない', errs5.length === 0, errs5.map(e => e.params.exceptionDetails.text).join(' / '));
-
-  // ===== ここから v2.4 追加分（操作中ユーザーのコンボ化・⌘S/⌘⇧C・独立した使い方ボタン・保存後の共有促し）=====
-  const tmpV5 = pathm.join(osm.tmpdir(), 'cl-v24-' + Date.now().toString(36) + '.html');
-  fsm.copyFileSync(ABS, tmpV5);
-  b.dialog.action = { accept: true };
-  b.dialog.log.length = 0;
-  await b.goto('file://' + encodeURI(tmpV5));
+  ok('ボタンでも指でも同じ位置に着き、ページ番号とドットが追従する',
+     r34b.ボタンで動く && r34b.スクロールに追従 && r34b.ドットも追従 && r34b.各ページが縦に読める,
+     JSON.stringify(r34b));
 
   // 35. ⌘/Ctrl+S で、確認ダイアログを挟まずに保存が実行され、ブラウザ既定の保存ダイアログは止める
   const r35 = JSON.parse(await b.evalJS(`

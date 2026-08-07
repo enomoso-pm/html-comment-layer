@@ -1,5 +1,5 @@
 <!-- ===================================================================
-     COMMENT-LAYER v2.10.1 : START
+     COMMENT-LAYER v2.11.0 : START
      HTML資料にレビューコメント機能を後付けするドロップイン・ブロック。
      この START 〜 END までを丸ごと差し替えればバージョンアップできる。
      資料側に必要な条件：
@@ -424,18 +424,20 @@ html.cl-guide-open #cl-guide{ display:flex; }
 .cl-g-head{ display:flex; justify-content:space-between; align-items:center; gap:12px;
   padding:12px 12px 12px 20px; border-bottom:1px solid var(--cl-border); flex:0 0 auto; }
 .cl-g-title{ display:flex; align-items:center; gap:7px; font-size:15px; font-weight:700; color:var(--cl-ink); }
-/* 縦は素直にスクロールさせ、横は自前のページ送りに使う */
-.cl-g-body{ flex:1 1 auto; overflow-y:auto; overscroll-behavior:contain; padding:26px 32px 20px;
-  touch-action:pan-y; }
-.cl-g-step{ display:none; }
-.cl-g-step.on{ display:block; }
-/* 送り方向に合わせて滑り込ませる。長いと操作の邪魔になるだけなので 0.18 秒 */
-@keyframes cl-g-slide-fwd{ from{ opacity:0; transform:translateX(26px); } to{ opacity:1; transform:none; } }
-@keyframes cl-g-slide-back{ from{ opacity:0; transform:translateX(-26px); } to{ opacity:1; transform:none; } }
-.cl-g-step.on.cl-g-fwd{ animation:cl-g-slide-fwd .18s cubic-bezier(.16,1,.3,1) both; }
-.cl-g-step.on.cl-g-back{ animation:cl-g-slide-back .18s cubic-bezier(.16,1,.3,1) both; }
-@media (prefers-reduced-motion:reduce){
-  .cl-g-step.on.cl-g-fwd,.cl-g-step.on.cl-g-back{ animation:none; }
+/* --- ページ送りはブラウザ標準の横スクロール＋スナップに任せる ---
+   自前で「横に何px動いたら1ページ」を書くと、トラックパッドの慣性の長さが振り方しだいで
+   決まらないせいで必ず破綻する。締め出しを短くすれば一振りで2ページ送られ、長くすれば
+   次の一振りが効かない。どちらも直せない。9枚を横に並べて scroll-snap に任せれば、
+   指の動きにそのまま追従し、scroll-snap-stop:always が「一度に1枚まで」を保証する。 */
+.cl-g-body{ flex:1 1 auto; min-height:0; display:flex; padding:0;
+  overflow-x:auto; overflow-y:hidden; overscroll-behavior:contain;
+  scroll-snap-type:x mandatory; scroll-behavior:smooth;
+  scrollbar-width:none; -ms-overflow-style:none; }
+.cl-g-body::-webkit-scrollbar{ display:none; }
+.cl-g-step{ flex:0 0 100%; width:100%; min-width:0;
+  scroll-snap-align:start; scroll-snap-stop:always;
+  overflow-y:auto; overscroll-behavior-y:contain; padding:26px 32px 20px; }
+@media (prefers-reduced-motion:reduce){ .cl-g-body{ scroll-behavior:auto; } }
 }
 .cl-g-art{ display:block; width:100%; max-width:430px; height:auto; margin:0 auto 20px; }
 .cl-g-h{ font-size:20px; font-weight:700; line-height:1.5; color:var(--cl-ink); text-align:center; margin:0 0 12px; }
@@ -462,7 +464,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
   font:700 12px/1.7 var(--cl-mono); color:var(--cl-ink); }
 @media (max-width:600px){
   .cl-g-panel{ height:min(92vh,760px); }
-  .cl-g-body{ padding:20px 18px 12px; }
+  .cl-g-step{ padding:20px 18px 12px; }
   .cl-g-h{ font-size:18px; }
   /* 狭い画面ではキー名の折り返しを許す。nowrap のままだと表が横にはみ出す */
   #cl-guide .cl-g-keys td:first-child{ white-space:normal; width:auto; padding-right:10px; }
@@ -1109,7 +1111,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
 (function () {
   'use strict';
   if (window.__commentLayer) return;
-  var VERSION = '2.10.1';
+  var VERSION = '2.11.0';
 
   var comments = [], users = [], pinMode = false, draft = null, dirty = false, activeId = null, booted = false;
   var activeUserId = null, toastTimer = null;
@@ -2314,31 +2316,53 @@ html.cl-guide-open #cl-guide{ display:flex; }
 
   function guideSteps() { return document.querySelectorAll('#cl-guide .cl-g-step'); }
 
-  // アニメ用のクラスは実行時に付けるものなので、書き出す前に必ず落とす。
-  // 付いたまま保存すると、受け取った人のファイルに毎回1ページぶん焼き込まれる
-  function clearGuideAnim() {
-    var steps = guideSteps();
-    for (var i = 0; i < steps.length; i++) steps[i].classList.remove('cl-g-fwd', 'cl-g-back');
-  }
-
-  function guideGo(i) {
+  // 表示だけを付け替える（実際の移動はスクロール位置）
+  function paintGuide() {
     var steps = guideSteps(), dots = document.querySelectorAll('#cl-guide .cl-g-dot');
-    if (!steps.length) return;
-    var from = guideStep;
-    guideStep = Math.max(0, Math.min(steps.length - 1, i));
     for (var k = 0; k < steps.length; k++) steps[k].classList.toggle('on', k === guideStep);
-    clearGuideAnim();
-    if (guideStep !== from) {
-      var el = steps[guideStep];
-      void el.offsetWidth;                     // 直前のアニメを打ち切って 再生し直す
-      el.classList.add(guideStep > from ? 'cl-g-fwd' : 'cl-g-back');
-    }
     for (var m = 0; m < dots.length; m++) dots[m].classList.toggle('on', m === guideStep);
-    var prev = $('#cl-g-prev'), next = $('#cl-g-next'), body = $('#cl-guide .cl-g-body');
+    var prev = $('#cl-g-prev'), next = $('#cl-g-next');
     if (prev) prev.disabled = guideStep === 0;
     if (next) next.textContent = guideStep === steps.length - 1 ? '閉じる' : '次へ →';
-    if (body) body.scrollTop = 0;
   }
+
+  function guideGo(i, instant) {
+    var steps = guideSteps(), body = $('#cl-guide .cl-g-body');
+    if (!steps.length || !body) return;
+    guideStep = Math.max(0, Math.min(steps.length - 1, i));
+    paintGuide();
+    steps[guideStep].scrollTop = 0;            // 開き直したページは頭から読ませる
+    var left = guideStep * body.clientWidth;
+    if (instant) {
+      var keep = body.style.scrollBehavior;
+      body.style.scrollBehavior = 'auto';
+      body.scrollLeft = left;
+      body.style.scrollBehavior = keep;
+    } else {
+      body.scrollLeft = left;                  // scroll-behavior:smooth が効く
+    }
+  }
+
+  // 指やトラックパッドで動かされたときは、止まってから今のページを読み取る。
+  // 途中の位置で追従するとドットが震えるので、落ち着いてから合わせる
+  (function () {
+    var body = $('#cl-guide .cl-g-body');
+    if (!body) return;
+    var t = null;
+    body.addEventListener('scroll', function () {
+      clearTimeout(t);
+      t = setTimeout(function () {
+        var w = body.clientWidth;
+        if (!w) return;
+        var i = Math.round(body.scrollLeft / w);
+        if (i !== guideStep) { guideStep = i; paintGuide(); }
+      }, 90);
+    }, { passive: true });
+    // 幅が変わるとスクロール位置とページ番号がずれる
+    window.addEventListener('resize', function () {
+      if (root.classList.contains('cl-guide-open')) guideGo(guideStep, true);
+    });
+  })();
 
   function setGuide(open) {
     root.classList.toggle('cl-guide-open', !!open);
@@ -2346,7 +2370,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
       // ガイドの裏で選択ツールバーやピンモードが生きていると、閉じた瞬間に誤爆する
       if (pinMode) setPinMode(false);
       var tb = $('#cl-toolbar'); if (tb) tb.style.display = 'none';
-      guideGo(0);
+      guideGo(0, true);
       var n = $('#cl-g-next'); if (n) n.focus();
     }
   }
@@ -3078,8 +3102,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
     $('#cl-toolbar').style.display = 'none';
     // ガイドは静的マークアップなので閉じて1ページ目に戻すだけで、書いたときの状態に揃う
     setGuide(false);
-    guideGo(0);
-    clearGuideAnim();
+    guideGo(0, true);
     // トーストの文面は実行時に入れたもの。空にしてから書き出さないと、2回目以降の保存で
     // 前回の通知文がファイルに焼き込まれ、受け取った側で「資料の本文」として扱われてしまう
     clearToast();
@@ -3198,47 +3221,6 @@ html.cl-guide-open #cl-guide{ display:flex; }
     if (e.target === this) setGuide(false);
   });
 
-  /* ガイドのページ送りを、指とトラックパッドでもできるようにする。
-     マウスのドラッグは拾わない（本文の選択と取り合いになるため）。 */
-  (function () {
-    var g = $('#cl-guide');
-    if (!g) return;
-    var sx = 0, sy = 0, tracking = false;
-
-    g.addEventListener('pointerdown', function (e) {
-      if (e.pointerType === 'mouse') return;
-      tracking = true; sx = e.clientX; sy = e.clientY;
-    });
-    g.addEventListener('pointerup', function (e) {
-      if (!tracking) return;
-      tracking = false;
-      var dx = e.clientX - sx, dy = e.clientY - sy;
-      // 縦に振れている動きは、本文を読むためのスクロール。横が明確に勝ったときだけ送る
-      if (Math.abs(dx) < 50 || Math.abs(dx) <= Math.abs(dy)) return;
-      guideGo(guideStep + (dx < 0 ? 1 : -1));
-    });
-    g.addEventListener('pointercancel', function () { tracking = false; });
-
-    /* トラックパッドの二本指横スクロール。
-       一度送ったら「イベントが途切れるまで」次を受け付けない。
-       固定時間で止める作りにすると、慣性がその時間より長く続いたときに
-       同じ一振りで2ページ送られてしまう（慣性の長さは振り方しだいで決まらない）。 */
-    var acc = 0, locked = false, idle = null;
-    g.addEventListener('wheel', function (e) {
-      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
-      e.preventDefault();
-      // 惰性のぶんも含めて、流れが止まってはじめて「一振り終わり」とみなす
-      clearTimeout(idle);
-      idle = setTimeout(function () { locked = false; acc = 0; }, 160);
-      if (locked) return;
-      acc += e.deltaX;
-      if (Math.abs(acc) > 80) {
-        guideGo(guideStep + (acc > 0 ? 1 : -1));
-        acc = 0;
-        locked = true;
-      }
-    }, { passive: false });
-  })();
   $('#cl-toolbar').addEventListener('mousedown', function (e) { e.preventDefault(); startTextComment(); });
   $('#cl-toast').addEventListener('click', function () { this.classList.remove('show'); });
 
@@ -3315,4 +3297,4 @@ html.cl-guide-open #cl-guide{ display:flex; }
   };
 })();
 </script>
-<!-- ===== COMMENT-LAYER v2.10.1 : END ===== -->
+<!-- ===== COMMENT-LAYER v2.11.0 : END ===== -->
