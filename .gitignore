@@ -1,7 +1,13 @@
 # macOS
 .DS_Store
 
+# セッション間の引き継ぎメモ。手元だけの一時的なものなので追跡しない
+# （残す価値のある内容は CHANGELOG.md と SKILL.md、README.md に書くこと）
+HANDOVER.md
+
 # 検証で生成される中間ファイル
 *_commented.html
 *_stripped.html
+*_merged.html
 *.bak
+__pycache__/

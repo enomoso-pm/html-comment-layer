@@ -7,6 +7,19 @@ if (!FILE) { console.error('使い方: node verify.mjs <target.html>'); process.
 
 const b = await launch(9340);
 let pass = 0, fail = 0;
+
+// レイヤーは DOMContentLoaded で起動する。外部リソースを参照している資料では load が
+// 来ないので cdp.mjs が待ち切らずに進むが、そのまま評価すると boot() の前に踏み込んで
+// host が null のまま _streamTextNodes() を呼び、TreeWalker が例外を投げる。
+// 「1回だけ落ちて再実行で通る」の正体はこれなので、起動を待ってから先へ進む
+const goto = async (url) => {
+  await b.goto(url);
+  for (let i = 0; i < 80; i++) {
+    if (await b.evalJS(`return !!(window.__commentLayer && document.querySelector('[data-cl-host]'));`)) return;
+    await b.wait(100);
+  }
+  console.log('  （レイヤーの起動を待てませんでした: ' + url + '）');
+};
 const tmpGens = [];   // 世代テストで作る一時ファイル
 const ok = (name, cond, detail = '') => {
   (cond ? pass++ : fail++);
@@ -14,7 +27,7 @@ const ok = (name, cond, detail = '') => {
 };
 
 try {
-  await b.goto('file://' + encodeURI(FILE.startsWith('/') ? FILE : process.cwd() + '/' + FILE));
+  await goto('file://' + encodeURI(FILE.startsWith('/') ? FILE : process.cwd() + '/' + FILE));
 
   const errs = b.events.filter(e => e.method === 'Runtime.exceptionThrown');
   ok('読み込み時にJSエラーが出ない', errs.length === 0, errs.map(e => e.params.exceptionDetails.text).join(' / '));
@@ -286,7 +299,7 @@ try {
   `));
   b.dialog.log.length = 0;
   b.dialog.action = { accept: true };
-  await b.goto(URL0);
+  await goto(URL0);
   const r18 = JSON.parse(await b.evalJS(`
     return JSON.stringify({
       hasTxt: __commentLayer.comments.some(c => c.id === '${seeded.txtId}'),
@@ -306,14 +319,14 @@ try {
   const tmpCopy = pathm.join(osm.tmpdir(), 'cl-isolation-' + Date.now().toString(36) + '.html');
   fsm.copyFileSync(ABS, tmpCopy);
   b.dialog.log.length = 0;
-  await b.goto('file://' + encodeURI(tmpCopy));
+  await goto('file://' + encodeURI(tmpCopy));
   const dlg19 = b.dialog.log.some(d => (d.message || '').includes('復元しますか'));
   ok('別ファイル名で開いても復元提案が出ない', !dlg19);
   try { fsm.unlinkSync(tmpCopy); } catch {}
 
   // 20. ダウンロード後は提案が出ない
   b.dialog.log.length = 0;
-  await b.goto(URL0);                     // ここで出る復元提案は自動承諾される
+  await goto(URL0);                     // ここで出る復元提案は自動承諾される
   await b.evalJS(`
     const o = URL.createObjectURL; URL.createObjectURL = () => 'blob:t';
     const oc = window.confirm; window.confirm = () => true;
@@ -323,7 +336,7 @@ try {
     return 1;
   `);
   b.dialog.log.length = 0;
-  await b.goto(URL0);
+  await goto(URL0);
   const dlg20 = b.dialog.log.some(d => (d.message || '').includes('復元しますか'));
   ok('ダウンロード後に開き直しても復元提案が出ない', !dlg20);
 
@@ -384,7 +397,7 @@ try {
   const tmpV2 = pathm.join(osm.tmpdir(), 'cl-nextver-' + Date.now().toString(36) + '.html');
   fsm.writeFileSync(tmpV2, htmlV2);
   b.dialog.log.length = 0;
-  await b.goto('file://' + encodeURI(tmpV2));
+  await goto('file://' + encodeURI(tmpV2));
 
   // 資料側のスクリプトが開くたびにDOMを組み立て直す資料（実サイトの保存ページなど）では、
   // 書き出して開き直した時点で本文が二重になり、どの引用も一意でなくなる。
@@ -469,7 +482,7 @@ try {
   const tmpV3 = pathm.join(osm.tmpdir(), 'cl-hash-' + Date.now().toString(36) + '.html');
   fsm.copyFileSync(ABS, tmpV3);
   b.dialog.log.length = 0;
-  await b.goto('file://' + encodeURI(tmpV3));
+  await goto('file://' + encodeURI(tmpV3));
   const s25 = JSON.parse(await b.evalJS(PAGE_HELPERS + `
     const used = [];
     const e = __vt.uniq(12, used); used.push(e);
@@ -489,7 +502,7 @@ try {
   }
   b.dialog.log.length = 0;
   b.dialog.action = { accept: true };
-  await b.goto('file://' + encodeURI(tmpV3));
+  await goto('file://' + encodeURI(tmpV3));
   const r25 = JSON.parse(await b.evalJS(`
     const e = document.querySelector('.comment-highlight[data-id="${s25.eId}"]');
     return JSON.stringify({
@@ -514,7 +527,7 @@ try {
   fsm.copyFileSync(ABS, tmpV4);
   b.dialog.action = { accept: true };
   b.dialog.log.length = 0;
-  await b.goto('file://' + encodeURI(tmpV4));
+  await goto('file://' + encodeURI(tmpV4));
 
   // A は本文の前方、C は後方から選ぶ（更新順と文書順が別物になる並びを作るため）
   const s26 = JSON.parse(await b.evalJS(PAGE_HELPERS + `
@@ -1420,7 +1433,7 @@ try {
   const r8b = await (async () => {
     let cur = ABS, gens = [];
     for (let g = 0; g <= 3; g++) {
-      await b.goto('file://' + encodeURI(cur));
+      await goto('file://' + encodeURI(cur));
       gens.push(JSON.parse(await b.evalJS(`
         // 数えるのはレイヤーが持ち込んだものだけ。実サイトの保存ページは資料側の
         // スクリプトが要素もidも増やすので、全体を数えると資料の性質を測ることになる
@@ -1455,7 +1468,533 @@ try {
      r8b[3].要素数 <= r8b[0].要素数,
      r8b.map(g => g.要素数).join(' → '));
   // 以降のテストのために元のファイルへ戻す
-  await b.goto('file://' + encodeURI(ABS));
+  await goto('file://' + encodeURI(ABS));
+
+  // 検査中のファイルからレイヤーのブロックだけを借りる。以降の「その場で組み立てる資料」で使う
+  const LAYER_BLOCK = (() => {
+    const src = fsm.readFileSync(ABS, 'utf-8');
+    const s0 = src.indexOf('<!-- ==='), s1 = src.lastIndexOf('COMMENT-LAYER');
+    const blockEnd = src.indexOf('-->', s1) + 3;
+    return src.slice(src.lastIndexOf('<!--', s0 + 1), blockEnd);
+  })();
+  const mkDoc = (name, body) => {
+    const p = pathm.join(osm.tmpdir(), `cl-${name}-` + Date.now().toString(36) + '.html');
+    fsm.writeFileSync(p, body.replace('</body>', LAYER_BLOCK + '\n</body>'));
+    tmpGens.push(p);
+    return p;
+  };
+
+  // ===== ここから v2.12.0 追加分（ピンの比率化・完了を隠す・キーボード）=====
+  // ピンの検査には「幅がウィンドウに追従する資料」が要る。中央寄せの固定幅コンテナだと
+  // 幅を変えても host の幅が変わらず、比率で持てているかどうかが表に出ない。
+  // v2.11 までピン座標は host 左上からの絶対pxだったので、相手のウィンドウ幅が違うと
+  // ピンが本文からずれた（＝資料側に「中央寄せの固定幅」を注文していた理由）
+  const FLUID = mkDoc('fluid', `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>幅可変の資料</title>
+<style>body{margin:0;padding:40px 4% 400px;font-family:system-ui,sans-serif;line-height:1.9}
+h1{font-size:24px}p{margin:0 0 18px}</style>
+</head><body>
+<h1>幅可変の資料</h1>
+<p>この資料は最大幅を持たないので、ウィンドウ幅がそのまま本文の幅になる。</p>
+<p>連携は日次のファイルで行い、結果は担当者へメールで共有する想定である。</p>
+<p>移行判定の基準は、並行稼働の二週目までに差分がゼロになっていることとする。</p>
+<p>投資回収期間は四年程度を見込んでおり、五年目以降は保守費のみとなる。</p>
+</body></html>`);
+
+  b.dialog.action = { accept: true };
+  await b.setViewport(1440, 900);
+  await goto('file://' + encodeURI(FLUID));
+
+  // 43. ピンを刺し、そのあとウィンドウ幅を変えても、本文に対する同じ位置に居続ける
+  const p43a = JSON.parse(await b.evalJS(`
+    __commentLayer.setPinMode(true);
+    const host = document.querySelector('[data-cl-host]');
+    const hr = host.getBoundingClientRect();
+    const x = Math.round(hr.left + hr.width * 0.4), y = 260;
+    (document.elementFromPoint(x, y) || host).dispatchEvent(
+      new MouseEvent('mousedown', { clientX: x, clientY: y, bubbles: true, cancelable: true }));
+    document.getElementById('cl-draft-text').value = '幅に追従するピン';
+    __commentLayer.saveDraft();
+    const c = __commentLayer.comments[__commentLayer.comments.length - 1];
+    // xr を持たない旧データも並べて置き、こちらは動かないことを確かめる
+    __commentLayer.commit({ type: 'add', comment: { id: 'pin-legacy', type: 'pin', text: '旧データのピン',
+      author: '旧', color: '#008299', date: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z', resolved: false, x: 123, y: 320 } });
+    const left = id => parseFloat(document.querySelector('.comment-pin[data-id="' + id + '"]').style.left);
+    return JSON.stringify({ id: c.id, x: c.x, xr: c.xr, hostW: __commentLayer._hostWidth(),
+                            left: left(c.id), legacyLeft: left('pin-legacy') });
+  `));
+  await b.setViewport(1000, 900);
+  await b.wait(400);
+  const p43b = JSON.parse(await b.evalJS(`
+    const left = id => parseFloat(document.querySelector('.comment-pin[data-id="' + id + '"]').style.left);
+    return JSON.stringify({ hostW: __commentLayer._hostWidth(),
+                            left: left('${p43a.id}'), legacyLeft: left('pin-legacy') });
+  `));
+  const ratio = (l, w) => +(l / w).toFixed(4);
+  // 比率は「クリックした瞬間の幅」で取る。saveDraft の時点ではサイドバーが開いていて
+  // host が細くなっているので、x / いまの幅 とは一致しない。描画位置が xr に従うことを見る
+  ok('ピンの横位置が host 幅に対する比率（xr）で保存される',
+     p43a.xr > 0 && p43a.xr < 1 && p43a.x > 0
+       && Math.abs(p43a.left - p43a.xr * p43a.hostW) < 0.01,
+     `xr=${p43a.xr} x=${p43a.x} hostW=${p43a.hostW} left=${p43a.left}`);
+  ok('幅の違うウィンドウで開いてもピンが本文の同じ位置に来る',
+     Math.abs(p43a.hostW - p43b.hostW) > 20 && Math.abs(p43a.left - p43b.left) > 5
+       && Math.abs(ratio(p43a.left, p43a.hostW) - ratio(p43b.left, p43b.hostW)) < 0.002,
+     `${p43a.hostW}px→${p43b.hostW}px / left ${Math.round(p43a.left)}→${Math.round(p43b.left)} / 比率 ${ratio(p43a.left, p43a.hostW)}→${ratio(p43b.left, p43b.hostW)}`);
+  ok('xr を持たない旧データは従来どおり絶対pxのまま出る',
+     p43a.legacyLeft === 123 && p43b.legacyLeft === 123,
+     `${p43a.legacyLeft} → ${p43b.legacyLeft}`);
+
+  // 43b. ドラッグで動かしたら xr も更新される。ここを忘れると、動かした瞬間に旧方式へ戻る
+  const p43c = JSON.parse(await b.evalJS(`
+    const el = document.querySelector('.comment-pin[data-id="${p43a.id}"]');
+    const r = el.getBoundingClientRect();
+    const sx = Math.round(r.left + r.width / 2), sy = Math.round(r.top + r.height / 2);
+    el.dispatchEvent(new MouseEvent('mousedown', { clientX: sx, clientY: sy, bubbles: true, cancelable: true }));
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: sx + 80, clientY: sy + 30, bubbles: true }));
+    document.dispatchEvent(new MouseEvent('mouseup', { clientX: sx + 80, clientY: sy + 30, bubbles: true }));
+    const c = __commentLayer.comments.filter(x => x.id === '${p43a.id}')[0];
+    return JSON.stringify({ x: c.x, xr: c.xr, hostW: __commentLayer._hostWidth(), 動いた: c.x - ${p43b.left} });
+  `));
+  ok('ドラッグで動かすと xr も追従する（旧方式に戻らない）',
+     Math.abs(p43c.動いた - 80) < 2 && Math.abs(p43c.xr - p43c.x / p43c.hostW) < 1e-6,
+     JSON.stringify(p43c));
+
+  // 43c. 書き出して、別の幅で開き直しても位置が保たれる
+  const exported43 = await b.evalJS(`
+    let cap = null; const o = URL.createObjectURL; URL.createObjectURL = x => { cap = x; return 'blob:t'; };
+    const k = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () {};
+    __commentLayer.exportHTML();
+    URL.createObjectURL = o; HTMLAnchorElement.prototype.click = k;
+    return cap.text();`);
+  const FLUID2 = pathm.join(osm.tmpdir(), 'cl-fluid2-' + Date.now().toString(36) + '.html');
+  fsm.writeFileSync(FLUID2, exported43);
+  tmpGens.push(FLUID2);
+  await b.setViewport(1300, 900);
+  await goto('file://' + encodeURI(FLUID2));
+  const p43d = JSON.parse(await b.evalJS(`
+    const c = __commentLayer.comments.filter(x => x.id === '${p43a.id}')[0];
+    const el = document.querySelector('.comment-pin[data-id="${p43a.id}"]');
+    return JSON.stringify({ hostW: __commentLayer._hostWidth(), left: parseFloat(el.style.left), xr: c.xr,
+                            legacy: parseFloat(document.querySelector('.comment-pin[data-id="pin-legacy"]').style.left) });
+  `));
+  ok('動かしたピンは、保存して別の幅で開き直しても本文の同じ位置に出る',
+     Math.abs(p43d.hostW - p43c.hostW) > 20
+       && Math.abs(ratio(p43d.left, p43d.hostW) - p43c.xr) < 0.002 && p43d.legacy === 123,
+     `${p43c.hostW}px→${p43d.hostW}px / 比率 ${p43c.xr.toFixed(4)}→${ratio(p43d.left, p43d.hostW)}`);
+  // 43d. ピンは押した場所に立つ。host に枠線があると、border ボックスで測った座標と
+  //      ピンの器（padding ボックス）の座標系が枠線ぶんずれる。v2.11 は作成時が前者・
+  //      ドラッグ後の保存が後者で、基準そのものが食い違っていた
+  {
+    const BORDERED = mkDoc('bordered', `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>枠線のある資料</title>
+<style>body{margin:0;border-left:40px solid #ccc;border-top:24px solid #ccc;
+padding:40px 32px 400px;font-family:system-ui,sans-serif;line-height:1.9}</style>
+</head><body>
+<h1>枠線のある資料</h1>
+<p>host（body）に太い枠線がある。ピンの器は padding ボックスの左上に置かれる。</p>
+<p>投資回収期間は四年程度を見込んでおり、五年目以降は保守費のみとなる。</p>
+</body></html>`);
+    await goto('file://' + encodeURI(BORDERED));
+    const r43e = JSON.parse(await b.evalJS(`
+      // 先にサイドバーを開いておく。開いていない状態で刺すと、直後に開くぶん本文が
+      // 折り返し直り、比率で持っているピンも一緒に動く（＝仕様どおり）。
+      // ここで見たいのは座標系の食い違いなので、レイアウトが動かない条件で測る
+      __commentLayer.setSidebar(true);
+      __commentLayer.setPinMode(true);
+      const host = document.querySelector('[data-cl-host]');
+      const cs = getComputedStyle(host);
+      const x = 300, y = 220;
+      (document.elementFromPoint(x, y) || host).dispatchEvent(
+        new MouseEvent('mousedown', { clientX: x, clientY: y, bubbles: true, cancelable: true }));
+      document.getElementById('cl-draft-text').value = '枠線のある資料へのピン';
+      __commentLayer.saveDraft();
+      const c = __commentLayer.comments[__commentLayer.comments.length - 1];
+      // 立った場所を画面座標に戻して、押した場所と突き合わせる（transform で先端が中心下）
+      const el = document.querySelector('.comment-pin[data-id="' + c.id + '"]');
+      const r = el.getBoundingClientRect();
+      // ドラッグで保存される値と、作成で保存される値が同じ座標系か
+      const before = c.x;
+      el.dispatchEvent(new MouseEvent('mousedown', { clientX: Math.round(r.left + r.width/2),
+        clientY: Math.round(r.top + r.height/2), bubbles: true, cancelable: true }));
+      document.dispatchEvent(new MouseEvent('mousemove', { clientX: Math.round(r.left + r.width/2) + 50,
+        clientY: Math.round(r.top + r.height/2), bubbles: true }));
+      document.dispatchEvent(new MouseEvent('mouseup', { clientX: Math.round(r.left + r.width/2) + 50,
+        clientY: Math.round(r.top + r.height/2), bubbles: true }));
+      return JSON.stringify({
+        枠線: cs.borderLeftWidth + '/' + cs.borderTopWidth,
+        押した: { x, y },
+        立った: { x: Math.round(r.left + r.width / 2), y: Math.round(r.bottom) },
+        作成のx: before, ドラッグ後のx: __commentLayer.comments.filter(z => z.id === c.id)[0].x
+      });
+    `));
+    ok('host に枠線があっても、ピンは押した場所に立つ',
+       Math.abs(r43e.立った.x - r43e.押した.x) <= 1 && Math.abs(r43e.立った.y - r43e.押した.y) <= 1,
+       `枠線=${r43e.枠線} 押した=(${r43e.押した.x},${r43e.押した.y}) 立った=(${r43e.立った.x},${r43e.立った.y})`);
+    ok('ピンの作成とドラッグが同じ座標系で保存される',
+       Math.abs((r43e.ドラッグ後のx - r43e.作成のx) - 50) <= 1,
+       `作成 ${r43e.作成のx} → ドラッグ後 ${r43e.ドラッグ後のx}（+50 のはず）`);
+  }
+
+  await goto('file://' + encodeURI(FLUID2));
+  await b.clearViewport();
+  await b.wait(200);
+
+  // 44. 完了を隠すトグル。区切り線そのものが取っ手で、畳んでも件数は全件のまま出る
+  const r44 = JSON.parse(await b.evalJS(`
+    const ids = () => [...document.querySelectorAll('.cl-item')].map(e => e.id.replace('cl-item-',''));
+    __commentLayer.setHideDone(false);
+    __commentLayer.setSidebar(true);
+    const all = __commentLayer.comments.map(c => c.id);
+    __commentLayer.toggleResolve(all[0]);
+    const openCount = document.getElementById('cl-count').textContent;
+    const divider = document.querySelector('.cl-divider');
+    const 見えている = ids().length;
+    divider.click();                                  // 畳む
+    const 畳んだ = {
+      件数表示: document.getElementById('cl-count').textContent,
+      カード数: ids().length,
+      完了カードが消えた: !document.getElementById('cl-item-' + all[0]),
+      区切りは残る: !!document.querySelector('.cl-divider'),
+      区切りの文言: (document.querySelector('.cl-divider') || {}).textContent,
+      aria: (document.querySelector('.cl-divider') || {}).getAttribute
+              ? document.querySelector('.cl-divider').getAttribute('aria-expanded') : null,
+      保存値: localStorage.getItem('cl-hide-done')
+    };
+    // J / K は隠した完了を飛ばす
+    __commentLayer.focusFromList(ids()[0]);
+    const seen = [];
+    for (let i = 0; i < 6; i++) {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', bubbles: true, cancelable: true }));
+      const a = document.querySelector('.cl-item.cl-active');
+      seen.push(a ? a.id.replace('cl-item-','') : null);
+    }
+    document.querySelector('.cl-divider').click();    // 開き直す
+    const 開いた = { カード数: ids().length, aria: document.querySelector('.cl-divider').getAttribute('aria-expanded') };
+    return JSON.stringify({ openCount, 見えている, 畳んだ, 開いた, 完了id: all[0],
+      Jが完了へ行かない: seen.every(id => id !== all[0]) });
+  `));
+  ok('「完了済み N件」の区切りを押すと完了カードが畳まれ、区切り自体は取っ手として残る',
+     r44.畳んだ.完了カードが消えた && r44.畳んだ.区切りは残る && r44.畳んだ.カード数 === r44.見えている - 1
+       && r44.畳んだ.aria === 'false' && /完了済み 1件/.test(r44.畳んだ.区切りの文言 || ''),
+     JSON.stringify(r44.畳んだ));
+  ok('畳んでいる間も件数表示は全件のまま（消えたのではないと分かる）',
+     r44.畳んだ.件数表示 === r44.openCount && /全 \d+ 件/.test(r44.openCount),
+     `${r44.openCount} / ${r44.畳んだ.件数表示}`);
+  ok('J / K は畳んだ完了を飛ばす', r44.Jが完了へ行かない, JSON.stringify(r44));
+  ok('もう一度押すと完了カードが戻る',
+     r44.開いた.カード数 === r44.見えている && r44.開いた.aria === 'true', JSON.stringify(r44.開いた));
+
+  // 44c. 区切りは左右の罫線を ::before / ::after で描いている。同じ要素に data-cl-tip を
+  //      足すと [data-cl-tip]::after と潰し合い、content は罫線が勝つのに
+  //      position:absolute だけが残って**右側の罫線が消える**（実際そうなっていた）
+  const r44line = JSON.parse(await b.evalJS(`
+    const d = document.querySelector('.cl-divider');
+    const w = s => parseFloat(getComputedStyle(d, s).width) || 0;
+    const p = s => getComputedStyle(d, s).position;
+    return JSON.stringify({ 左: Math.round(w('::before')), 右: Math.round(w('::after')),
+      左の配置: p('::before'), 右の配置: p('::after'),
+      幅: Math.round(d.getBoundingClientRect().width) });
+  `));
+  ok('完了済みの区切りは、左右とも罫線が引かれる（ツールチップと潰し合っていない）',
+     r44line.左 > 20 && r44line.右 > 20 && Math.abs(r44line.左 - r44line.右) <= 2
+       && r44line.左の配置 === 'static' && r44line.右の配置 === 'static',
+     JSON.stringify(r44line));
+
+  // 44b. 並び順と同じく「読み手の都合」なので localStorage に持ち、書き出したHTMLには焼かない
+  const r44b = await b.evalJS(`
+    __commentLayer.setHideDone(true);
+    let cap = null; const o = URL.createObjectURL; URL.createObjectURL = x => { cap = x; return 'blob:t'; };
+    const k = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () {};
+    __commentLayer.exportHTML();
+    URL.createObjectURL = o; HTMLAnchorElement.prototype.click = k;
+    return cap.text();`);
+  // 判定に "cl-hide-done" の有無は使えない。localStorage のキー名としてレイヤーの
+  // スクリプト本体に書いてあるので、書き出したHTMLには必ず現れる。
+  // 見るべきは「畳んだという状態」がファイルに入っていないこと
+  ok('「完了を隠す」設定は書き出したHTMLに焼き込まれない（並び順と同じく localStorage 止まり）',
+     r44b.indexOf('class="cl-divider"') < 0 && !/<html[^>]*cl-hide/.test(r44b)
+       && !/"hideDone"/.test(r44b) && r44.畳んだ.保存値 === '1',
+     `区切りの焼き込みなし=${r44b.indexOf('class="cl-divider"') < 0} localStorage=${r44.畳んだ.保存値}`);
+  // 開き直しても設定が残る（同じファイルなので localStorage が効く）。
+  // 完了そのものは書き出していないので、開いたあとにもう一度完了にして確かめる
+  await goto('file://' + encodeURI(FLUID2));
+  const r44c = JSON.parse(await b.evalJS(`
+    __commentLayer.setSidebar(true);
+    const 設定 = __commentLayer.hideDone;
+    const id = __commentLayer.comments[0].id;
+    __commentLayer.toggleResolve(id);
+    return JSON.stringify({ 設定,
+      完了が即畳まれる: !document.getElementById('cl-item-' + id)
+        && !!document.querySelector('.cl-divider[aria-expanded="false"]'),
+      消えたのではないと伝える: /畳む設定/.test(document.getElementById('cl-toast').textContent) });
+  `));
+  ok('「完了を隠す」設定は開き直しても残る（localStorage）',
+     r44c.設定 === true && r44c.完了が即畳まれる, JSON.stringify(r44c));
+  ok('畳む設定のまま完了にすると、カードが消えたのではないことをその場で伝える',
+     r44c.消えたのではないと伝える, JSON.stringify(r44c));
+
+  // 44d. 畳むのは一覧だけ。本文のピンとハイライトは残るので、そこから飛べてしまう。
+  //      飛んだ先で一覧に何も出ないと「押しても無反応」にしか見えないので、畳みを解いて出す
+  const r44d = JSON.parse(await b.evalJS(`
+    const id = __commentLayer.comments.filter(c => c.resolved)[0].id;
+    const 畳む前 = { 畳んでいる: __commentLayer.hideDone, カードなし: !document.getElementById('cl-item-' + id) };
+    const el = document.querySelector('.comment-pin[data-id="' + id + '"], .comment-highlight[data-id="' + id + '"]');
+    if (!el) return JSON.stringify({ fatal: '完了した指摘が本文に残っていない' });
+    el.click();
+    return JSON.stringify({ 畳む前,
+      本文には残っている: true,
+      押すと開いて選ばれる: !!document.querySelector('#cl-item-' + id + '.cl-active'),
+      畳みが解ける: __commentLayer.hideDone === false });
+  `));
+  if (r44d.fatal) throw new Error(r44d.fatal);
+  ok('畳んでいても、本文のピン・ハイライトから飛べば開いて選ばれる（押して無反応にならない）',
+     r44d.畳む前.畳んでいる && r44d.畳む前.カードなし && r44d.押すと開いて選ばれる && r44d.畳みが解ける,
+     JSON.stringify(r44d));
+  await b.evalJS(`__commentLayer.setHideDone(false); return 1;`);
+
+  // 45. キーボード操作。v2.11 まで tabindex がどこにも無く、カードは J / K でしか辿れなかった
+  const r45 = JSON.parse(await b.evalJS(`
+    __commentLayer.setSidebar(true);
+    const cards = [...document.querySelectorAll('.cl-item:not(.cl-draft)')];
+    const first = cards[0];
+    first.focus();
+    const フォーカスできる = document.activeElement === first;
+    // カードにフォーカスがある状態でも、単キーのショートカットは効く
+    const send = key => document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+    send('j'); const jが効く = !!document.querySelector('.cl-item.cl-active');
+    send('c'); const cが効く = document.documentElement.classList.contains('cl-pinmode');
+    __commentLayer.setPinMode(false);
+    // Space は奪わない（一覧のスクロールに残す）。押しても選択は動かず、既定動作も止めない
+    const other = cards[1] || cards[0];
+    __commentLayer.focusFromList(cards[0].id.replace('cl-item-',''));
+    other.focus();
+    const sp = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
+    other.dispatchEvent(sp);
+    const spaceは奪わない = !sp.defaultPrevented && !other.classList.contains('cl-active');
+    // Enter で本文へ飛ぶ（クリックと同じ）
+    first.focus();
+    const en = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    first.dispatchEvent(en);
+    return JSON.stringify({
+      全カードがtabindex0: cards.every(e => e.getAttribute('tabindex') === '0'),
+      フォーカスできる, jが効く, cが効く, spaceは奪わない,
+      Enterで選ばれる: first.classList.contains('cl-active') && en.defaultPrevented,
+      現在地が読み上げに出る: first.getAttribute('aria-current') === 'true',
+      現在地はひとつだけ: document.querySelectorAll('#cl-list [aria-current]').length === 1
+    });
+  `));
+  ok('コメントカードを Tab で辿れ、Enter で本文へ飛ぶ',
+     r45.全カードがtabindex0 && r45.フォーカスできる && r45.Enterで選ばれる, JSON.stringify(r45));
+  ok('カードは Space を奪わない（スペースはスクロールのまま残す）',
+     r45.spaceは奪わない, JSON.stringify(r45));
+  ok('カードにフォーカスがあっても J / C などの単キーが効く', r45.jが効く && r45.cが効く, JSON.stringify(r45));
+  ok('いま選んでいるカードが aria-current で1つだけ示される',
+     r45.現在地が読み上げに出る && r45.現在地はひとつだけ, JSON.stringify(r45));
+
+  // 45b. ガイドはモーダル（aria-modal="true"）なので、開いている間 Tab を外へ出さない。
+  //      サイドバーは違う。モーダルではないので閉じ込めるのは誤り
+  await b.evalJS(`
+    __commentLayer.setSidebar(true);
+    document.querySelector('.cl-item:not(.cl-draft)').focus();
+    window.__before = document.activeElement.id;
+    document.getElementById('cl-guide-fab').click();
+    return 1;`);
+  await b.wait(300);
+  // 閉じる + ドット9つ + 「次へ」で11個（「戻る」は1ページ目なので disabled）。
+  // 一周して先頭へ戻るところまで回す
+  const tabWalk = [];
+  for (let i = 0; i < 13; i++) {
+    await b.key(9, 'Tab', 0);
+    await b.wait(60);
+    tabWalk.push(JSON.parse(await b.evalJS(`return JSON.stringify({
+      中にいる: !!(document.activeElement && document.activeElement.closest && document.activeElement.closest('#cl-guide')),
+      どこ: (document.activeElement && (document.activeElement.id || document.activeElement.className)) || '(body)',
+      ページ: __commentLayer.guideStep });`)));
+  }
+  await b.key(9, 'Tab', 8);   // Shift+Tab（戻り側も外へ出ない）
+  await b.wait(60);
+  const backTab = JSON.parse(await b.evalJS(`return JSON.stringify({
+    中にいる: !!(document.activeElement && document.activeElement.closest && document.activeElement.closest('#cl-guide')),
+    ページ: __commentLayer.guideStep });`));
+  ok('ガイドを開いている間、Tab がパネルの外へ出ない',
+     tabWalk.every(t => t.中にいる) && backTab.中にいる,
+     tabWalk.map(t => t.どこ).join(' → '));
+  ok('ガイド内の Tab 移動でページが勝手に送られない',
+     tabWalk.every(t => t.ページ === 0) && backTab.ページ === 0,
+     tabWalk.map(t => t.ページ).join(','));
+
+  const r45c = JSON.parse(await b.evalJS(`
+    __commentLayer.setGuide(false);
+    return JSON.stringify({
+      戻り先: (document.activeElement && document.activeElement.id) || '(body)',
+      期待: window.__before,
+      閉じた: !document.documentElement.classList.contains('cl-guide-open') });
+  `));
+  ok('ガイドを閉じると、開く前に触っていた要素へフォーカスが戻る',
+     r45c.閉じた && r45c.戻り先 === r45c.期待 && /^cl-item-/.test(r45c.期待 || ''),
+     JSON.stringify(r45c));
+
+  // 45d. サイドバーには閉じ込めを入れない（モーダルではないため）
+  await goto('file://' + encodeURI(FLUID2));
+  await b.evalJS(`__commentLayer.setSidebar(true); document.getElementById('cl-copy').focus(); return 1;`);
+  const outWalk = [];
+  for (let i = 0; i < 5; i++) {
+    await b.key(9, 'Tab', 0);
+    await b.wait(50);
+    outWalk.push(await b.evalJS(`return !!(document.activeElement && document.activeElement.closest
+      && document.activeElement.closest('#cl-sidebar'));`));
+  }
+  ok('サイドバーはモーダルではないので Tab で外へ出られる', outWalk.some(v => v === false),
+     outWalk.map(v => v ? '中' : '外').join(' → '));
+
+  const errs8 = b.events.filter(e => e.method === 'Runtime.exceptionThrown');
+  ok('ピン・完了・キーボードのテスト中もJSエラーが出ない', errs8.length === 0,
+     errs8.map(e => e.params.exceptionDetails.text).join(' / '));
+
+  // 46. --merge：AさんとBさんが別々に書いたレビューを1つにまとめる
+  {
+    const cpm = await import('node:child_process');
+    const urlm = await import('node:url');
+    const PY = pathm.join(pathm.dirname(urlm.fileURLToPath(import.meta.url)), 'add_comment_layer.py');
+
+    // 46a. 合流の規則そのもの（新しい方を採る・返信は和集合・ユーザーは基準側を優先）
+    const unit = cpm.execFileSync('python3', ['-c', `
+import importlib.util, json, sys
+spec = importlib.util.spec_from_file_location('m', ${JSON.stringify(PY)})
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+A = [{"id":"t1","text":"古い","updatedAt":"2026-01-01T00:00:00.000Z",
+      "replies":[{"id":"r1","text":"Aの返信","date":"2026-01-01T00:00:00.000Z"}]},
+     {"id":"t2","text":"Aだけ","updatedAt":"2026-01-01T00:00:00.000Z"}]
+B = [{"id":"t1","text":"新しい","updatedAt":"2026-02-01T00:00:00.000Z",
+      "replies":[{"id":"r2","text":"Bの返信","date":"2026-01-05T00:00:00.000Z"}]},
+     {"id":"t3","text":"Bだけ","updatedAt":"2026-01-01T00:00:00.000Z"}]
+c = m.merge_comments(A, B)
+u = m.merge_users([{"id":"u1","name":"A側","color":"#111111"}],
+                  [{"id":"u1","name":"B側","color":"#222222"},{"id":"u2","name":"Bさん","color":"#333333"}])
+# 名前では寄せない（同姓の別人が1人に潰れる方が害が大きい）。同名別IDは2人のまま残る
+dupname = m.merge_users([{"id":"u1","name":"田中","color":"#111111"}],
+                        [{"id":"u9","name":"田中","color":"#222222"}])
+t1 = [x for x in c if x["id"] == "t1"][0]
+print(json.dumps({
+  "件数": len(c), "id": [x["id"] for x in c],
+  "新しい方を採る": t1["text"], "返信の和集合": sorted(r["id"] for r in t1["replies"]),
+  "返信キーは無ければ出ない": "replies" not in [x for x in c if x["id"] == "t2"][0],
+  "ユーザー": [(x["id"], x["name"]) for x in u],
+  "同名別IDは潰さない": len(dupname) == 2,
+  "閉じscriptを伏せる": "<" not in m.dump_store([{"t": "</script>"}]),
+  "境界マーカーを伏せる": "COMMENT-LAYER" not in m.dump_store([{"t": "COMMENT-LAYER"}]),
+}, ensure_ascii=False))
+`], { encoding: 'utf-8' }).trim();
+    const r46a = JSON.parse(unit);
+    ok('--merge：同じIDは最終更新が新しい方を採り、返信は両方から集まる',
+       r46a.件数 === 3 && r46a.新しい方を採る === '新しい'
+         && JSON.stringify(r46a.返信の和集合) === JSON.stringify(['r1', 'r2'])
+         && r46a.返信キーは無ければ出ない,
+       JSON.stringify(r46a));
+    ok('--merge：ユーザーはIDで和集合にし、同じIDは基準ファイル側を残す',
+       r46a.ユーザー.length === 2 && r46a.ユーザー[0][1] === 'A側', JSON.stringify(r46a.ユーザー));
+    ok('--merge：同名でもIDが違えば別人として残す（同姓の別人を潰さない）',
+       r46a.同名別IDは潰さない, JSON.stringify(r46a.ユーザー));
+    ok('--merge：書き出しは exportHTML と同じエスケープ（閉じscript・境界マーカー）',
+       r46a.閉じscriptを伏せる && r46a.境界マーカーを伏せる, JSON.stringify(r46a));
+
+    // 46b. 実際に2人ぶんのファイルを作って合流させ、開き直して位置が復元されるところまで見る。
+    //      土台は検査対象の資料ではなく、その場で組み立てた静的な資料にする。
+    //      実サイトの保存ページのように「開くたびに中身を組み立て直す」資料を土台にすると、
+    //      合流の可否ではなく資料側の二重描画を測ることになる（既知の性質＝SKILL.md 参照）
+    const MERGE_DOC = `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>合流テストの資料</title>
+<style>body{margin:0 auto;max-width:820px;padding:48px 32px 240px;font-family:system-ui,sans-serif;line-height:1.9}</style>
+</head><body>
+<h1>合流テストの資料</h1>
+<p>受付から審査までの所要日数は、現行の運用で平均四営業日となっている。</p>
+<p>連携は日次のファイルで行い、結果は担当者へメールで共有する想定である。</p>
+<p>移行判定の基準は、並行稼働の二週目までに差分がゼロになっていることとする。</p>
+<p>投資回収期間は四年程度を見込んでおり、五年目以降は保守費のみとなる。</p>
+</body></html>`;
+    const write2 = async (tag, note) => {
+      const p = mkDoc(tag, MERGE_DOC);
+      b.dialog.log.length = 0;
+      await goto('file://' + encodeURI(p));
+      const info = JSON.parse(await b.evalJS(PAGE_HELPERS + `
+        const q = __vt.uniq(12, ${JSON.stringify(note.exclude || [])}, ${note.backwards ? 'true' : 'false'});
+        if (!q) return JSON.stringify({ fatal: '一意な文字列が見つからない' });
+        const id = __vt.mk(q, ${JSON.stringify(note.text)});
+        ${note.reply ? `__commentLayer.commit({ type:'reply-add', id: id, reply: { id:'rep-${tag}',
+            text: ${JSON.stringify(note.reply)}, author:'${tag}', color:'#008299', date: new Date().toISOString() } });` : ''}
+        let cap = null; const o = URL.createObjectURL; URL.createObjectURL = x => { cap = x; return 'blob:t'; };
+        const k = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () {};
+        __commentLayer.exportHTML();
+        URL.createObjectURL = o; HTMLAnchorElement.prototype.click = k;
+        return cap.text().then(t => JSON.stringify({ id, q, html: t }));
+      `));
+      if (info.fatal) throw new Error(info.fatal);
+      fsm.writeFileSync(p, info.html);
+      return { path: p, id: info.id, q: info.q };
+    };
+    const A = await write2('mergeA', { text: 'Aさんの指摘', reply: 'Aさんの返信' });
+    const B = await write2('mergeB', { text: 'Bさんの指摘', exclude: [], backwards: true });
+    const MERGED = pathm.join(osm.tmpdir(), 'cl-merged-' + Date.now().toString(36) + '.html');
+    tmpGens.push(MERGED);
+    const out46 = cpm.execFileSync('python3', [PY, A.path, '--merge', B.path, '-o', MERGED], { encoding: 'utf-8' });
+
+    b.dialog.log.length = 0;
+    await goto('file://' + encodeURI(MERGED));
+    const r46b = JSON.parse(await b.evalJS(`
+      const at = id => __commentLayer.comments.filter(c => c.id === id)[0];
+      const a = at('${A.id}'), bb = at('${B.id}');
+      return JSON.stringify({
+        両方入っている: !!a && !!bb,
+        A本文: a ? a.text : null, B本文: bb ? bb.text : null,
+        Aの返信: a && (a.replies || []).length === 1,
+        Aのハイライト: !!document.querySelector('.comment-highlight[data-id="${A.id}"]'),
+        Bのハイライト: !!document.querySelector('.comment-highlight[data-id="${B.id}"]'),
+        JSONエラーなし: !!window.__commentLayer
+      });
+    `));
+    ok('--merge で2人ぶんのコメントが全件そろい、返信も残る',
+       r46b.両方入っている && r46b.A本文 === 'Aさんの指摘' && r46b.B本文 === 'Bさんの指摘' && r46b.Aの返信,
+       JSON.stringify(r46b));
+    ok('--merge の結果を開くと、引用が一意な指摘はハイライトが復元される',
+       r46b.Aのハイライト && r46b.Bのハイライト, JSON.stringify(r46b));
+    // 46c. まだレビューしていない資料に合流する場合、基準側の user-master は
+    //      アセット同梱の初期値（レビュアー1）であってデータではない。
+    //      これを「基準側優先」で残すと、同じ id を持つ相手の実名が初期値に潰される
+    {
+      const plain = pathm.join(osm.tmpdir(), 'cl-plain-' + Date.now().toString(36) + '.html');
+      tmpGens.push(plain);
+      fsm.writeFileSync(plain, `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8">
+<title>まだレビューしていない資料</title></head><body><h1>未レビュー</h1>
+<p>投資回収期間は四年程度を見込んでいる。</p></body></html>`);
+      // ★ 相手側の u1 を改名しておく。初期値と同じ名前のままだと、潰れても潰れなくても
+      //   同じ結果になり、判定が素通りする（＝意味のない検査になる）
+      const RENAMED = '合流元で改名した人';
+      const bRenamed = pathm.join(osm.tmpdir(), 'cl-brenamed-' + Date.now().toString(36) + '.html');
+      tmpGens.push(bRenamed);
+      fsm.writeFileSync(bRenamed, fsm.readFileSync(B.path, 'utf-8').replace(
+        /(<script[^>]*\bid="user-master"[^>]*>)([\s\S]*?)(<\/script\s*>)/,
+        (m0, a, body, c) => a + body.replace(/"name":"[^"]*"/, `"name":"${RENAMED}"`) + c));
+      const outPlain = pathm.join(osm.tmpdir(), 'cl-plainmerged-' + Date.now().toString(36) + '.html');
+      tmpGens.push(outPlain);
+      cpm.execFileSync('python3', [PY, plain, '--merge', bRenamed, '-o', outPlain], { encoding: 'utf-8' });
+      const src = fsm.readFileSync(outPlain, 'utf-8');
+      const grab = (id) => JSON.parse(
+        (src.match(new RegExp('<script[^>]*\\bid="' + id + '"[^>]*>([\\s\\S]*?)</script\\s*>')) || [null, '[]'])[1]);
+      const got = grab('user-master'), gotC = grab('comment-store');
+      ok('--merge：レイヤーの無い資料に合流しても、相手のユーザーが初期値に潰されない',
+         gotC.length >= 1 && got.some(g => g.name === RENAMED)
+           && !got.some(g => g.name === 'レビュアー1'),
+         `結果=${JSON.stringify(got.map(u => [u.id, u.name]))}`);
+    }
+
+    ok('--merge の完了メッセージが、位置の復元と「コメントは失われていない」ことを伝える',
+       /ハイライトは合流していません/.test(out46) && /位置が復元されます/.test(out46)
+         && /失われていません/.test(out46),
+       out46.split('\n').filter(l => l.indexOf('※') >= 0).join(' / '));
+  }
+
+  const errs9 = b.events.filter(e => e.method === 'Runtime.exceptionThrown');
+  ok('合流テスト中もJSエラーが出ない', errs9.length === 0, errs9.map(e => e.params.exceptionDetails.text).join(' / '));
+  await goto('file://' + encodeURI(ABS));
 
   // ===== ここから v2.4.1 追加分（host が body に落ちる資料）=====
   // 検査対象の資料が .wrap 等を持っていると、ドック外のUI（使い方ボタン・トースト）は
@@ -1471,15 +2010,10 @@ try {
 <p>移行判定の基準は、並行稼働の二週目までに差分がゼロになっていることとする。</p>
 </body></html>`;
     // レイヤーのブロックだけを、いま検査しているファイルから借りてくる
-    const src = fsm.readFileSync(ABS, 'utf-8');
-    const s0 = src.indexOf('<!-- ==='), s1 = src.lastIndexOf('COMMENT-LAYER');
-    const blockEnd = src.indexOf('-->', s1) + 3;
-    const block = src.slice(src.lastIndexOf('<!--', s0 + 1), blockEnd);
-    const tmpBare = pathm.join(osm.tmpdir(), 'cl-bare-' + Date.now().toString(36) + '.html');
-    fsm.writeFileSync(tmpBare, bare.replace('</body>', block + '\n</body>'));
+    const tmpBare = mkDoc('bare', bare);
     b.dialog.log.length = 0;
     b.dialog.action = { accept: true };
-    await b.goto('file://' + encodeURI(tmpBare));
+    await goto('file://' + encodeURI(tmpBare));
 
     // 判定はレイヤー本体の streamText() をそのまま呼ぶ。テスト側に除外セレクタを書き写すと、
     // UIを足したときの漏れがテストにも同じように伝染して、素通りしてしまう
@@ -1513,7 +2047,7 @@ try {
        '中身=' + JSON.stringify(r51.書き出しのトースト要素の中身));
 
     // ピンモード中にドック外のUI（使い方ボタン）を押しても、ピンが落ちない
-    await b.goto('file://' + encodeURI(tmpBare));
+    await goto('file://' + encodeURI(tmpBare));
     const fabPt = JSON.parse(await b.evalJS(`
       __commentLayer.setPinMode(true);
       const r = document.getElementById('cl-guide-fab').getBoundingClientRect();

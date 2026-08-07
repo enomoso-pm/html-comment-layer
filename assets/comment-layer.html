@@ -1,5 +1,5 @@
 <!-- ===================================================================
-     COMMENT-LAYER v2.11.0 : START
+     COMMENT-LAYER v2.12.0 : START
      HTML資料にレビューコメント機能を後付けするドロップイン・ブロック。
      この START 〜 END までを丸ごと差し替えればバージョンアップできる。
      資料側に必要な条件：
@@ -85,7 +85,8 @@ html.cl-open{ padding-right:var(--cl-w); }
 /* --- DADS フォーカスリング。キーボード操作の現在地を必ず見せる --- */
 .cl-btn:focus-visible,.cl-iconbtn:focus-visible,.cl-chip:focus-visible,
 .cl-combo-btn:focus-visible,.cl-opt:focus-visible,.cl-menu-item:focus-visible,
-.cl-g-btn:focus-visible,.cl-g-dot:focus-visible,#cl-sort:focus-visible{
+.cl-g-btn:focus-visible,.cl-g-dot:focus-visible,#cl-sort:focus-visible,
+.cl-divider:focus-visible,.cl-item:focus-visible{
   outline:3px solid var(--cl-black); outline-offset:2px;
   box-shadow:0 0 0 2px var(--cl-yellow-300); z-index:1;
 }
@@ -124,7 +125,10 @@ html.cl-open{ padding-right:var(--cl-w); }
 .cl-iconbtn.on{ background:var(--cl-key-100); color:var(--cl-primary); }
 
 /* --- ショートカットのツールチップ。
-       疑似要素なので、DOMのテキストとしては存在しない＝引用照合や自動退避を汚さない --- */
+       疑似要素なので、DOMのテキストとしては存在しない＝引用照合や自動退避を汚さない。
+       ★ ::after を自前で使っている要素には data-cl-tip を付けないこと。
+          content は後勝ちで潰し合うが position:absolute は残るので、
+          ツールチップが出ないうえに元の装飾（罫線など）が消える --- */
 [data-cl-tip]{ position:relative; }
 [data-cl-tip]::after{ content:attr(data-cl-tip); position:absolute; left:50%; bottom:calc(100% + 8px);
   transform:translateX(-50%); background:var(--cl-gray-900); color:var(--cl-white);
@@ -335,9 +339,23 @@ html.cl-open #cl-sidebar{ display:flex; }
 .cl-item.cl-done{ background:var(--cl-soft); opacity:.7; }
 .cl-item.cl-done:hover{ opacity:1; }
 .cl-item.cl-done .cl-body{ color:var(--cl-mid); }
-.cl-divider{ display:flex; align-items:center; gap:8px; font-size:12px; color:var(--cl-mid);
-  font-weight:700; margin-top:4px; }
+/* 区切り線そのものが開閉の取っ手。ここを押すと完了済みが畳まれる。
+   道具行にもう1つスイッチを置くより、対象のすぐ隣にある取っ手のほうが迷わない。
+   畳んでいる間もこの行は必ず残るので、開き直す手段が画面から消えることがない */
+/* 資料側の裸の button セレクタが流れ込むので、見た目に効くものは自分で潰しておく
+   （既出の「資料側CSSの流し込み」と同じ穴。button は上の初期化リストに入れられない
+   ―― レイヤー内の他のボタンが自前で組んだスタイルまで消えるため） */
+.cl-divider{ display:flex; align-items:center; gap:8px; width:100%; padding:2px 0; margin-top:4px;
+  border:none; background:transparent; cursor:pointer; text-align:left;
+  text-transform:none; box-shadow:none; min-width:0; min-height:0;
+  font:700 12px/1.7 var(--cl-font); letter-spacing:.02em; color:var(--cl-mid); }
 .cl-divider::before,.cl-divider::after{ content:''; flex:1 1 auto; height:1px; background:var(--cl-border); }
+.cl-divider:hover{ color:var(--cl-ink); }
+.cl-divider:hover::before,.cl-divider:hover::after{ background:var(--cl-gray-300); }
+.cl-divider-label{ display:inline-flex; align-items:center; gap:4px; flex:0 0 auto; }
+.cl-divider-arrow{ transition:transform .15s; }
+.cl-divider[aria-expanded="false"] .cl-divider-arrow{ transform:rotate(-90deg); }
+@media (prefers-reduced-motion:reduce){ .cl-divider-arrow{ transition:none; } }
 
 /* --- 返信スレッド --- */
 .cl-replies{ margin-top:10px; border-top:1px solid var(--cl-border); padding-top:10px;
@@ -438,7 +456,6 @@ html.cl-guide-open #cl-guide{ display:flex; }
   scroll-snap-align:start; scroll-snap-stop:always;
   overflow-y:auto; overscroll-behavior-y:contain; padding:26px 32px 20px; }
 @media (prefers-reduced-motion:reduce){ .cl-g-body{ scroll-behavior:auto; } }
-}
 .cl-g-art{ display:block; width:100%; max-width:430px; height:auto; margin:0 auto 20px; }
 .cl-g-h{ font-size:20px; font-weight:700; line-height:1.5; color:var(--cl-ink); text-align:center; margin:0 0 12px; }
 #cl-guide .cl-g-lead{ font-size:14px; line-height:1.9; margin:0 0 14px; }
@@ -813,9 +830,10 @@ html.cl-guide-open #cl-guide{ display:flex; }
       <path d="M258 40 C 274 60, 250 106, 210 118" stroke="#197a4b" stroke-width="2" fill="none" stroke-dasharray="5 5" stroke-linecap="round"/>
       <path d="M218 112 l-10 6 3 -11" fill="#197a4b"/>
       <g>
-        <path d="M64 132 h58" stroke="#e6e6e6" stroke-width="2"/>
-        <text x="160" y="136" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#767676">完了済み 1件</text>
-        <path d="M198 132 h58" stroke="#e6e6e6" stroke-width="2"/>
+        <path d="M64 132 h46" stroke="#e6e6e6" stroke-width="2"/>
+        <path d="M116 129 l4 5 4 -5" fill="none" stroke="#767676" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <text x="164" y="136" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#767676">完了済み 1件</text>
+        <path d="M202 132 h54" stroke="#e6e6e6" stroke-width="2"/>
       </g>
       <g opacity=".6">
         <rect x="64" y="146" width="192" height="44" rx="8" fill="#f2f2f2" stroke="#e6e6e6" stroke-width="2"/>
@@ -836,6 +854,9 @@ html.cl-guide-open #cl-guide{ display:flex; }
       <li><strong>担当者を間違えたときは、書き直さなくて大丈夫。</strong>「…」→「担当者を変更」で
         別の人に付け替えられます。<strong>本文のハイライトの色もその場で変わります</strong>。返信も同じように直せます</li>
       <li>誰がいつ完了にしたかが、カードに残ります。<strong>並び順（最後に書いた時刻）は変わりません</strong></li>
+      <li><strong>「完了済み ○件」の区切りを押すと、完了した指摘をまとめて畳めます。</strong>
+        件数はそのまま出ているので、消えたのではないことが分かります。もう一度押せば開きます
+        （この設定はあなたの手元にだけ残り、書き出すファイルには入りません）</li>
     </ul>
     <div class="cl-g-tip">
       <svg class="cl-i" data-s="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 17h2v-6h-2v6Zm1-8c.283 0 .52-.096.712-.288A.968.968 0 0 0 13 8a.968.968 0 0 0-.288-.712A.968.968 0 0 0 12 7a.968.968 0 0 0-.712.288A.968.968 0 0 0 11 8c0 .283.096.52.288.712.191.192.429.288.712.288Zm0 13a9.7 9.7 0 0 1-3.9-.79 10.1 10.1 0 0 1-5.31-5.31A9.7 9.7 0 0 1 2 12c0-1.39.26-2.69.79-3.9a10.1 10.1 0 0 1 5.31-5.31A9.7 9.7 0 0 1 12 2c1.39 0 2.69.26 3.9.79a10.1 10.1 0 0 1 5.31 5.31c.53 1.21.79 2.51.79 3.9s-.26 2.69-.79 3.9a10.1 10.1 0 0 1-5.31 5.31c-1.21.53-2.51.79-3.9.79Z"/></svg>
@@ -1065,7 +1086,8 @@ html.cl-guide-open #cl-guide{ display:flex; }
       <tr><td><kbd class="cl-k">⌘</kbd> / <kbd class="cl-k">Ctrl</kbd> + <kbd class="cl-k">S</kbd></td><td>資料を保存（確認なしで即保存。保存後に画面上部で共有を促します）</td></tr>
       <tr><td><kbd class="cl-k">⌘</kbd> / <kbd class="cl-k">Ctrl</kbd> + <kbd class="cl-k">Shift</kbd> + <kbd class="cl-k">S</kbd></td><td>AIに渡す指摘をコピー</td></tr>
       <tr><td><kbd class="cl-k">Esc</kbd></td><td>入力の取り消し → ピンモード解除 → 一覧を閉じる（押すたびに1段ずつ戻る）</td></tr>
-      <tr><td><kbd class="cl-k">←</kbd> / <kbd class="cl-k">→</kbd></td><td>このガイドのページ送り</td></tr>
+      <tr><td><kbd class="cl-k">Tab</kbd></td><td>一覧のカードとボタンを順に辿る（カードで <kbd class="cl-k">Enter</kbd> を押すと、そのコメントの本文へ）</td></tr>
+      <tr><td><kbd class="cl-k">←</kbd> / <kbd class="cl-k">→</kbd></td><td>このガイドのページ送り（開いている間、<kbd class="cl-k">Tab</kbd> はガイドの中だけを回ります）</td></tr>
     </table>
     <table class="cl-g-keys">
       <caption>マウス</caption>
@@ -1075,6 +1097,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
       <tr><td>ピンをドラッグ</td><td>ピンの位置を動かす</td></tr>
       <tr><td>カードのチェック</td><td>完了 / 完了の取り消し</td></tr>
       <tr><td>カードの「…」</td><td>編集 / 担当者を変更 / 削除 / 完了</td></tr>
+      <tr><td>「完了済み ○件」の区切り</td><td>完了した指摘を畳む / 開く（件数は畳んでも出たまま）</td></tr>
       <tr><td>返信の「…」</td><td>編集 / 担当者を変更 / 削除</td></tr>
       <tr><td>名前の横のチップ</td><td>優先度を 必須 → 要望 → 軽微 → なし と切り替え</td></tr>
       <tr><td>ボタンにマウスを重ねる</td><td>そのボタンのショートカットが出ます</td></tr>
@@ -1111,7 +1134,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
 (function () {
   'use strict';
   if (window.__commentLayer) return;
-  var VERSION = '2.11.0';
+  var VERSION = '2.12.0';
 
   var comments = [], users = [], pinMode = false, draft = null, dirty = false, activeId = null, booted = false;
   var activeUserId = null, toastTimer = null;
@@ -1130,8 +1153,10 @@ html.cl-guide-open #cl-guide{ display:flex; }
   var LABELS = ['must', 'want', 'nit'];
   var LABEL_JA = { must: '必須', want: '要望', nit: '軽微' };
   var LABEL_DESC = { must: '必ず直す', want: 'できれば直す', nit: '細かい好み' };
-  // 並び順は資料の中身ではなく「読み手の都合」なので、ファイルには焼かず localStorage に持つ
+  // 並び順は資料の中身ではなく「読み手の都合」なので、ファイルには焼かず localStorage に持つ。
+  // 「完了を隠す」も同じ扱い（誰が読むかで変わる設定であって、資料の中身ではない）
   var sortMode = 'updated';
+  var hideDone = false;
 
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var root = document.documentElement;
@@ -1152,7 +1177,9 @@ html.cl-guide-open #cl-guide{ display:flex; }
     pencilSm: 'M5 19h1.4l8.6-8.6-1.4-1.4L5 17.6V19Zm12.85-8.6L7.25 21H3v-4.25l10.6-10.6 4.25 4.25Z',
     person: 'M12 12c-1.1 0-2.042-.392-2.825-1.175C8.392 10.042 8 9.1 8 8s.392-2.042 1.175-2.825C9.958 4.392 10.9 4 12 4s2.042.392 2.825 1.175C15.608 5.958 16 6.9 16 8s-.392 2.042-1.175 2.825C14.042 11.608 13.1 12 12 12Zm-8 8v-2.8c0-.567.146-1.087.438-1.563A2.91 2.91 0 0 1 5.6 14.55a14.843 14.843 0 0 1 3.15-1.163A13.76 13.76 0 0 1 12 13c1.1 0 2.183.129 3.25.387 1.067.259 2.117.646 3.15 1.163.483.25.87.612 1.162 1.087.292.476.438.996.438 1.563V20H4Z',
     back: 'M9.55 18 3.55 12l6-6 1.425 1.425L7.4 11h13.05v2H7.4l3.575 3.575L9.55 18Z',
-    search: 'M19.6 21 13.3 14.7c-.5.4-1.075.717-1.725.95-.65.233-1.342.35-2.075.35-1.817 0-3.354-.629-4.612-1.887C3.629 12.854 3 11.317 3 9.5s.629-3.354 1.888-4.613C6.146 3.629 7.683 3 9.5 3s3.354.629 4.613 1.887C15.371 6.146 16 7.683 16 9.5c0 .733-.117 1.425-.35 2.075-.233.65-.55 1.225-.95 1.725L21 19.6 19.6 21ZM9.5 14c1.25 0 2.313-.438 3.188-1.313S14 10.75 14 9.5s-.438-2.313-1.312-3.188C11.813 5.438 10.75 5 9.5 5s-2.313.438-3.188 1.312C5.438 7.187 5 8.25 5 9.5s.438 2.313 1.312 3.187C7.187 13.562 8.25 14 9.5 14Z'
+    search: 'M19.6 21 13.3 14.7c-.5.4-1.075.717-1.725.95-.65.233-1.342.35-2.075.35-1.817 0-3.354-.629-4.612-1.887C3.629 12.854 3 11.317 3 9.5s.629-3.354 1.888-4.613C6.146 3.629 7.683 3 9.5 3s3.354.629 4.613 1.887C15.371 6.146 16 7.683 16 9.5c0 .733-.117 1.425-.35 2.075-.233.65-.55 1.225-.95 1.725L21 19.6 19.6 21ZM9.5 14c1.25 0 2.313-.438 3.188-1.313S14 10.75 14 9.5s-.438-2.313-1.312-3.188C11.813 5.438 10.75 5 9.5 5s-2.313.438-3.188 1.312C5.438 7.187 5 8.25 5 9.5s.438 2.313 1.312 3.187C7.187 13.562 8.25 14 9.5 14Z',
+    // 完了済みの開閉に使う。開いているときは下向き、畳んでいるときはCSSで右向きに回す
+    chevron: 'M12 15.4 6 9.4 7.4 8l4.6 4.6L16.6 8 18 9.4l-6 6Z'
   };
   function svgIcon(name, size, cls) {
     return '<svg class="cl-i' + (cls ? ' ' + cls : '') + '" data-s="' + (size || 20) +
@@ -1172,6 +1199,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
       // v2.4 以前の「文書順（doc）」は廃止した。保存されていても既定へ落とす
       var sm = localStorage.getItem('cl-sort');
       if (sm === 'priority' || sm === 'updated') sortMode = sm;
+      hideDone = localStorage.getItem('cl-hide-done') === '1';
     } catch (e) {}
     var ss = $('#cl-sort');
     if (ss) {
@@ -1255,6 +1283,48 @@ html.cl-guide-open #cl-guide{ display:flex; }
   }
   function isDone(c) { return !!(c && c.resolved); }
   function repliesOf(c) { return Array.isArray(c && c.replies) ? c.replies : []; }
+
+  /* ==========================================
+     ピンの横位置は「host 幅に対する比率（xr）」で持つ
+     v2.11 まではピン座標を host 左上からの絶対pxで保存していたので、
+     相手のウィンドウ幅や表示倍率が違うとピンが本文からずれた。
+     横（x）だけを比率にする。実害の大半は横方向で、縦は幅が変わると本文が
+     折り返し直る＝総高さ自体が変わるため、比率にしてもむしろ悪化する。
+     互換のため x は消さず、xr が無い旧データは従来どおり x で描く。
+     読み込み時に x から xr を逆算してはいけない（そのときの幅で焼き付き、
+     別の環境で開くと余計にずれる）。
+
+     測る相手は host ではなく、器の #cl-pins（host の padding ボックスの左上に置いた
+     width:100% の箱）。pin.style.left はこの箱の左端からのpxなので、
+     測るのも器でなければ辻褄が合わない。host の getBoundingClientRect() は
+     border ボックスなので、host に枠線があると原点も幅もずれる。
+     実際 v2.11 は、刺すときが host の border ボックス基準・ドラッグ後の保存が
+     pin.style.left（＝padding ボックス基準）で、作成とドラッグの基準が食い違っていた。
+     ========================================== */
+  function pinSpace() {
+    var el = pinBox || host;
+    if (!el) return { left: 0, top: 0, width: 1 };
+    var r = el.getBoundingClientRect();
+    return { left: r.left, top: r.top, width: r.width > 0 ? r.width : 1 };
+  }
+  function hostWidth() { return pinSpace().width; }
+  // 比率は6桁で丸める。書き出したJSONを人が差分で読むので、意味のない桁は落とす
+  function toRatio(px, w) { return Math.round((px / w) * 1e6) / 1e6; }
+  function hasRatio(c) { return c && c.xr != null && isFinite(c.xr); }
+  function pinLeft(c) { return hasRatio(c) ? c.xr * hostWidth() : (c && c.x) || 0; }
+  // 幅が変わったら、比率を持つピンだけ置き直す。旧データ（xrなし）は動かさない
+  function repositionPins() {
+    if (!pinBox) return;
+    var w = hostWidth();
+    Array.prototype.slice.call(pinBox.querySelectorAll('.comment-pin')).forEach(function (el) {
+      var id = el.getAttribute('data-id');
+      // 保存前の下書きピンも一緒に動かす。ここを落とすと、入力中に幅が変わったときだけ
+      // 下書きのピンが取り残される
+      var c = (draft && draft.id === id) ? draft : byId(id);
+      if (hasRatio(c)) el.style.left = (c.xr * w) + 'px';
+    });
+  }
+  window.addEventListener('resize', repositionPins);
   // 並び替えの基準時刻。旧形式（updatedAt なし）は date にフォールバックする
   function stamp(c) { return c.updatedAt || c.date || ''; }
   function labelOf(c) { return LABELS.indexOf(c && c.label) >= 0 ? c.label : ''; }
@@ -1302,6 +1372,24 @@ html.cl-guide-open #cl-guide{ display:flex; }
       if (sa === sb) return 0;
       return sa < sb ? 1 : -1;
     });
+  }
+
+  /* 「完了を隠す」が効いていても、いま手を入れている札だけは畳まない。
+     編集欄・返信欄・開いているメニューが操作の途中で消えると、何が起きたのか分からなくなる */
+  function keptOpen(c) {
+    if (draft && (draft.editId === c.id || draft.replyTo === c.id)) return true;
+    return openMenuId === c.id;
+  }
+  function isHiddenDone(c) { return hideDone && isDone(c) && !keptOpen(c); }
+  // 画面に出ている順。J / K はこれを辿るので、隠した完了へは飛ばない
+  function visibleComments() {
+    return orderedComments().filter(function (c) { return !isHiddenDone(c); });
+  }
+
+  function setHideDone(on) {
+    hideDone = !!on;
+    try { localStorage.setItem('cl-hide-done', hideDone ? '1' : '0'); } catch (e) {}
+    render();
   }
 
   /* ==========================================
@@ -1414,6 +1502,8 @@ html.cl-guide-open #cl-guide{ display:flex; }
         if (!pm) return;
         pm.x = action.x;
         pm.y = action.y;
+        // 比率もここで更新する。忘れると、動かした瞬間に旧方式（絶対px）へ戻る
+        pm.xr = toRatio(action.x, hostWidth());
         break;
       }
       case 'restore':
@@ -1872,6 +1962,9 @@ html.cl-guide-open #cl-guide{ display:flex; }
       // 資料側が html{scroll-behavior:smooth} を持っていても、位置合わせだけは必ず即時に行う
       if (after !== before) window.scrollBy({ top: after - before, left: 0, behavior: 'instant' });
     }
+    // 幅いっぱいの資料では、サイドバーの開閉そのものが host の幅を変える。
+    // resize イベントは飛ばないので、ここで明示的にピンを置き直す
+    repositionPins();
     if (!open && draft) cancelDraft();
   }
 
@@ -2364,14 +2457,56 @@ html.cl-guide-open #cl-guide{ display:flex; }
     });
   })();
 
+  /* --- フォーカストラップ ---
+     トラップを入れるのは #cl-guide だけ。サイドバーはモーダルではないので閉じ込めない
+     （閉じ込めると、一覧を見ながら本文をキーボードで辿ることができなくなる）。
+     ガイドは role="dialog" aria-modal="true" なので、開いている間 Tab が裏へ出ていけると
+     読み上げ上の宣言と実際の挙動が食い違う。 */
+  var guideReturnFocus = null;
+
+  function guideFocusables() {
+    var panel = $('#cl-guide .cl-g-panel');
+    if (!panel) return [];
+    return Array.prototype.slice.call(panel.querySelectorAll(
+      'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),' +
+      'textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
+    )).filter(function (el) { return el.offsetWidth || el.offsetHeight || el.getClientRects().length; });
+  }
+
+  // ページ本体（.cl-g-body）は横スクロールする器なので、ブラウザにフォーカスの行き先を
+  // 任せるとそこへ落ち、scroll-snap が働いて隣のページへ勝手に送られる。
+  // 行き先はこちらで決め、preventScroll と scrollLeft の復元で位置を動かさない
+  function trapGuideTab(e) {
+    var items = guideFocusables();
+    if (!items.length) return;
+    e.preventDefault();
+    var i = items.indexOf(document.activeElement);
+    var n = i < 0 ? (e.shiftKey ? items.length - 1 : 0)
+                  : (i + (e.shiftKey ? -1 : 1) + items.length) % items.length;
+    var body = $('#cl-guide .cl-g-body');
+    var keep = body ? body.scrollLeft : 0;
+    try { items[n].focus({ preventScroll: true }); } catch (err) { items[n].focus(); }
+    if (body && body.scrollLeft !== keep) body.scrollLeft = keep;
+  }
+
   function setGuide(open) {
+    var was = root.classList.contains('cl-guide-open');
     root.classList.toggle('cl-guide-open', !!open);
     if (open) {
       // ガイドの裏で選択ツールバーやピンモードが生きていると、閉じた瞬間に誤爆する
       if (pinMode) setPinMode(false);
       var tb = $('#cl-toolbar'); if (tb) tb.style.display = 'none';
+      if (!was) guideReturnFocus = document.activeElement;   // 閉じたら、開く前に触っていた要素へ戻す
       guideGo(0, true);
       var n = $('#cl-g-next'); if (n) n.focus();
+    } else if (was) {
+      var back = guideReturnFocus;
+      guideReturnFocus = null;
+      // 戻し先が消えている（再描画されたカードなど）ときは何もしない。
+      // body にフォーカスが落ちるだけで、Tab は資料の先頭からやり直しになる
+      if (back && back.focus && document.contains(back) && back !== document.body) {
+        try { back.focus({ preventScroll: true }); } catch (err) { back.focus(); }
+      }
     }
   }
 
@@ -2409,7 +2544,8 @@ html.cl-guide-open #cl-guide{ display:flex; }
 
     // ガイドを開いている間は、資料側のショートカットを全部止めてページ送りだけを受ける
     if (root.classList.contains('cl-guide-open')) {
-      if (e.key === 'Escape') { e.preventDefault(); setGuide(false); }
+      if (e.key === 'Tab') { trapGuideTab(e); }
+      else if (e.key === 'Escape') { e.preventDefault(); setGuide(false); }
       else if (e.key === 'ArrowRight') { e.preventDefault(); guideGo(guideStep + 1); }
       else if (e.key === 'ArrowLeft') { e.preventDefault(); guideGo(guideStep - 1); }
       return;
@@ -2451,8 +2587,14 @@ html.cl-guide-open #cl-guide{ display:flex; }
     if (!host.contains(e.target)) return;
     e.preventDefault();
     if (draft) cancelDraft();
-    var r = host.getBoundingClientRect();
-    draft = { type: 'pin', id: 'pin-' + Date.now().toString(36), x: e.clientX - r.left, y: e.clientY - r.top };
+    // 測るのはピンの器（＝pin.style.left の座標系そのもの）。host の矩形で測ると、
+    // host に枠線があるぶんだけ原点がずれ、ドラッグで保存する値と食い違う
+    var sp = pinSpace();
+    // 比率は「クリックした瞬間の幅」で取る。openForDraft() がサイドバーを開くと
+    // 幅いっぱいの資料では host が細くなるので、保存時に測り直すと別の位置になる
+    var dx = e.clientX - sp.left;
+    draft = { type: 'pin', id: 'pin-' + Date.now().toString(36),
+              x: dx, y: e.clientY - sp.top, xr: toRatio(dx, sp.width) };
     openForDraft();
   });
 
@@ -2598,7 +2740,11 @@ html.cl-guide-open #cl-guide{ display:flex; }
         var ctx = captureContext(draft.id);
         if (ctx) { c.prefix = ctx.prefix; c.suffix = ctx.suffix; }
       }
-      if (draft.type === 'pin') { c.x = draft.x; c.y = draft.y; }
+      // ピンは絶対pxと比率の両方を書く。xr が本命で、x は旧版のレイヤーで開いたとき用の控え
+      if (draft.type === 'pin') {
+        c.x = draft.x; c.y = draft.y;
+        c.xr = draft.xr != null ? draft.xr : toRatio(draft.x, hostWidth());
+      }
       action = { type: 'add', comment: c };
     }
     draft = null;                 // commit() 内の render() より先にドラフトを畳む
@@ -2633,11 +2779,19 @@ html.cl-guide-open #cl-guide{ display:flex; }
     var c = byId(id);
     if (!c) return;
     if (draft) cancelDraft();
+    var willHide = !isDone(c) && hideDone;
     if (isDone(c)) commit({ type: 'unresolve', id: id });
     else commit({ type: 'resolve', id: id, by: (currentUser() || {}).name || '' });
     // 完了にするとカードが最下部へ移るので、行き先まで一覧を送る（迷子にしない）
     var item = document.getElementById('cl-item-' + id);
-    if (item) centerInList(item);
+    if (item) { centerInList(item); return; }
+    // 「完了を隠す」が効いていると、押した瞬間にカードが一覧から消える。
+    // 消したのではなく畳んだだけだと、その場で言っておかないと削除と区別が付かない
+    if (willHide) {
+      showToast('<div class="cl-toast-head">' + svgIcon('check', 18) + '完了にしました</div>' +
+        '完了した指摘は畳む設定になっています。一覧の<strong>「完了済み ' +
+        comments.filter(isDone).length + '件」</strong>を押すと開けます。', 4500);
+    }
   }
 
   function cycleLabel(id) {
@@ -2681,8 +2835,9 @@ html.cl-guide-open #cl-guide{ display:flex; }
   }
 
   /* ---------- J / K でコメント間を移動 ---------- */
+  // 辿るのは「画面に出ている順」。隠した完了へ飛ぶと、一覧に何も光らず壊れて見える
   function jump(dir, unresolvedOnly) {
-    var ord = orderedComments().filter(function (c) { return unresolvedOnly ? !isDone(c) : true; });
+    var ord = visibleComments().filter(function (c) { return unresolvedOnly ? !isDone(c) : true; });
     if (!ord.length) return;
     var i = -1;
     for (var k = 0; k < ord.length; k++) { if (ord[k].id === activeId) { i = k; break; } }
@@ -2692,7 +2847,10 @@ html.cl-guide-open #cl-guide{ display:flex; }
     setSidebar(true);
     focusFromList(ord[n].id);
     var item = document.getElementById('cl-item-' + ord[n].id);
-    if (item) centerInList(item);
+    // 見た目の現在地とキーボードの現在地を揃える。ここで DOM のフォーカスも移しておかないと、
+    // J / K で進めたあと Tab を押した瞬間に一覧の先頭へ戻ってしまう。
+    // 位置合わせは centerInList が行うので、focus 自体はスクロールさせない
+    if (item) { try { item.focus({ preventScroll: true }); } catch (e) {} centerInList(item); }
   }
 
   /* ---------- 描画 ---------- */
@@ -2717,7 +2875,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
 
     // ピンは絶対座標なので、一覧の並び順とは無関係にまとめて描く
     comments.forEach(function (c) {
-      if (c.type === 'pin') drawPin(c.id, c.x, c.y, safeColor(c.color), c.author, false);
+      if (c.type === 'pin') drawPin(c.id, pinLeft(c), c.y, safeColor(c.color), c.author, false);
     });
     if (draft && draft.type === 'pin') {
       var u = currentUser();
@@ -2736,13 +2894,13 @@ html.cl-guide-open #cl-guide{ display:flex; }
     var doneTotal = comments.filter(isDone).length;
     var dividerDone = false;
     ordered.forEach(function (c) {
+      // 区切りは「隠す前」に必ず出す。ここを skip の後ろに置くと、
+      // 畳んだ瞬間に開き直す取っ手ごと消えて袋小路になる
       if (isDone(c) && !dividerDone) {
         dividerDone = true;
-        var dv = document.createElement('div');
-        dv.className = 'cl-divider';
-        dv.textContent = '完了済み ' + doneTotal + '件';
-        list.appendChild(dv);
+        list.appendChild(doneDivider(doneTotal));
       }
+      if (isHiddenDone(c)) return;
       if (draft && draft.editId === c.id) { list.appendChild(draftCard(c.text)); return; }
       list.appendChild(cardFor(c));
     });
@@ -2751,6 +2909,23 @@ html.cl-guide-open #cl-guide{ display:flex; }
     positionMenu();
     if (openMenuId && menuMode === 'assign') wireAssignMenu();
     if (activeId) nodesFor(activeId).forEach(function (n) { n.classList.add('cl-active'); });
+  }
+
+  // 完了済みの区切り＝開閉の取っ手。件数は畳んでいても必ず出す
+  function doneDivider(total) {
+    var dv = document.createElement('button');
+    dv.className = 'cl-divider';
+    dv.setAttribute('type', 'button');
+    dv.setAttribute('data-cl', 'toggle-done');
+    dv.setAttribute('aria-expanded', hideDone ? 'false' : 'true');
+    dv.setAttribute('aria-controls', 'cl-list');
+    // ★ data-cl-tip は付けない。ツールチップは [data-cl-tip]::after で描いており、
+    //   この区切りは左右の罫線を ::before / ::after で描いている。両方を1つの要素に
+    //   載せると、後勝ちで content だけ罫線に上書きされ、position:absolute だけが残る
+    //   ――ツールチップは出ないうえ、右側の罫線が消える（実際そうなっていた）
+    dv.innerHTML = '<span class="cl-divider-label">' + svgIcon('chevron', 16, 'cl-divider-arrow') +
+      '完了済み ' + total + '件' + (hideDone ? '（畳んでいます）' : '') + '</span>';
+    return dv;
   }
 
   /* 「…」メニューは一覧（overflow:auto）の中に置いてある。本文テキストの走査から
@@ -2783,10 +2958,25 @@ html.cl-guide-open #cl-guide{ display:flex; }
     item.className = 'cl-item' + (c.id === activeId ? ' cl-active' : '') + (done ? ' cl-done' : '');
     item.id = 'cl-item-' + c.id;
     item.style.borderLeftColor = safeColor(c.color);
+    // カードは Tab で辿れる。v2.11 まで tabindex がどこにも無く、移動手段は J / K だけだった。
+    // カード内のボタンは元から button なので、この1つを足すだけで順番に入る
+    item.tabIndex = 0;
+    if (c.id === activeId) item.setAttribute('aria-current', 'true');
     // カード内のボタン類（完了・ラベル・返信・編集・削除）は data-cl を持つ。
     // それ以外を押したときだけ本文へのジャンプとして扱う
     item.onclick = function (e) {
       if (e.target.closest && (e.target.closest('[data-cl]') || e.target.closest('textarea'))) return;
+      focusFromList(c.id);
+    };
+    // Enter でクリックと同じ「本文へ飛ぶ」。中のボタンや入力欄のキーは奪わない。
+    // ★ Space は取らない。この実装では「スペースでスクロールできること」が最優先の約束で
+    //   （落とし穴の1つ目）、カードにフォーカスがあるときの Space は一覧のスクロールに使う。
+    //   Enter だけで足りるものに、約束を破ってまで別の意味を足さない
+    item.onkeydown = function (e) {
+      if (e.target !== item) return;
+      if (e.key !== 'Enter') return;
+      if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing || e.keyCode === 229) return;
+      e.preventDefault();
       focusFromList(c.id);
     };
 
@@ -3053,8 +3243,9 @@ html.cl-guide-open #cl-guide{ display:flex; }
         if (!moved) return;
         var nx = parseFloat(pin.style.left), ny = parseFloat(pin.style.top);
         if (draft && draft.id === id) {
-          // ドラフトはまだ comments に入っていないので、単一入口の対象外
-          draft.x = nx; draft.y = ny; dirty = true;
+          // ドラフトはまだ comments に入っていないので、単一入口の対象外。
+          // 比率も一緒に更新する（保存前に動かしたぶんが落ちないように）
+          draft.x = nx; draft.y = ny; draft.xr = toRatio(nx, hostWidth()); dirty = true;
         } else {
           commit({ type: 'pin-move', id: id, x: nx, y: ny });
         }
@@ -3067,22 +3258,38 @@ html.cl-guide-open #cl-guide{ display:flex; }
   }
 
   /* ---------- フォーカス連動 ---------- */
+  // aria-current は「読み上げで今どこに居るか」を出すためのもの。
+  // クラスと同じ場所で必ず対にして付け外しする（片方だけ残ると読み上げが嘘をつく）
+  function markCurrent(item) {
+    document.querySelectorAll('#cl-list [aria-current]').forEach(function (el) { el.removeAttribute('aria-current'); });
+    if (item) item.setAttribute('aria-current', 'true');
+  }
   function clearActive() {
     document.querySelectorAll('.cl-active').forEach(function (el) { el.classList.remove('cl-active'); });
+    markCurrent(null);
+  }
+  /* 完了を畳んでいる最中でも、本文のハイライトやピンは残っている（畳むのは一覧だけ）。
+     そこから飛んできたのに一覧に何も出ないと、押しても無反応にしか見えない。
+     「その指摘を見せろ」と明示的に言われているので、畳みを解いて出す。 */
+  function revealIfCollapsed(id) {
+    var c = byId(id);
+    if (c && isHiddenDone(c)) setHideDone(false);
   }
   // 本文側をクリック：本文は動かさない。サイドバーだけ該当カードへ寄せる
   function focusFromDoc(id, anchorEl) {
     setSidebar(true, anchorEl);
+    revealIfCollapsed(id);
     clearActive(); activeId = id;
     nodesFor(id).forEach(function (n) { n.classList.add('cl-active'); });
     var item = document.getElementById('cl-item-' + id);
-    if (item) { item.classList.add('cl-active'); requestAnimationFrame(function () { centerInList(item); }); }
+    if (item) { item.classList.add('cl-active'); markCurrent(item); requestAnimationFrame(function () { centerInList(item); }); }
   }
   // サイドバー側をクリック：本文をその位置までスクロールする
   function focusFromList(id) {
+    revealIfCollapsed(id);
     clearActive(); activeId = id;
     var item = document.getElementById('cl-item-' + id);
-    if (item) item.classList.add('cl-active');
+    if (item) { item.classList.add('cl-active'); markCurrent(item); }
     var targets = nodesFor(id);
     targets.forEach(function (n) { n.classList.add('cl-active'); });
     if (targets.length) centerInPage(targets[0]);
@@ -3200,6 +3407,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
     else if (a === 'edit') editComment(t.getAttribute('data-id'));
     else if (a === 'del') deleteComment(t.getAttribute('data-id'));
     else if (a === 'resolve') toggleResolve(t.getAttribute('data-id'));
+    else if (a === 'toggle-done') setHideDone(!hideDone);
     else if (a === 'label') cycleLabel(t.getAttribute('data-id'));
     else if (a === 'reply') startReply(t.getAttribute('data-id'), null);
     else if (a === 'reply-edit') startReply(t.getAttribute('data-id'), t.getAttribute('data-rid'));
@@ -3288,6 +3496,14 @@ html.cl-guide-open #cl-guide{ display:flex; }
       render();
     },
     get sortMode() { return sortMode; },
+    setHideDone: setHideDone,
+    get hideDone() { return hideDone; },
+    visibleComments: visibleComments,
+    // ピンの比率化の検証用。幅を変えて left が追従するかを、本体と同じ式で突き合わせる
+    _hostWidth: function () { return hostWidth(); },
+    _pinLeft: function (id) { return pinLeft(byId(id)); },
+    _repositionPins: function () { repositionPins(); },
+    _guideFocusables: function () { return guideFocusables(); },
     // 検証用。レイヤーが「資料の本文」と見なしているテキストそのもの。
     // UIを足したときの除外漏れは、テスト側でセレクタを書き写すと一緒に漏れるので、
     // 本体が使っている関数をそのまま外に出して突き合わせる
@@ -3297,4 +3513,4 @@ html.cl-guide-open #cl-guide{ display:flex; }
   };
 })();
 </script>
-<!-- ===== COMMENT-LAYER v2.11.0 : END ===== -->
+<!-- ===== COMMENT-LAYER v2.12.0 : END ===== -->

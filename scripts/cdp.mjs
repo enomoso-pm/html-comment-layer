@@ -135,6 +135,14 @@ export async function launch(port = 9333) {
       return r.result.value;
     },
     wait: (ms) => new Promise(r => setTimeout(r, ms)),
+    // 画面幅を変える。ピンの位置が幅に追従するか（比率で持てているか）を見るのに使う。
+    // 上書きはページ遷移をまたいで残るので、使い終わったら必ず clearViewport() で戻す
+    async setViewport(width, height = 900) {
+      await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
+    },
+    async clearViewport() {
+      await send('Emulation.clearDeviceMetricsOverride');
+    },
     async key(code, key, mods = 0, text) {
       const base = { windowsVirtualKeyCode: code, key, modifiers: mods, code: key };
       await send('Input.dispatchKeyEvent', { type: 'keyDown', ...base, ...(text ? { text } : {}) });
