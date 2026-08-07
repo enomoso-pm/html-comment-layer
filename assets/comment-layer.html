@@ -1,5 +1,5 @@
 <!-- ===================================================================
-     COMMENT-LAYER v2.6.0 : START
+     COMMENT-LAYER v2.7.0 : START
      HTML資料にレビューコメント機能を後付けするドロップイン・ブロック。
      この START 〜 END までを丸ごと差し替えればバージョンアップできる。
      資料側に必要な条件：
@@ -173,10 +173,14 @@ html.cl-open #cl-sidebar{ display:flex; }
 #cl-sidebar .cl-head h3{ margin:0; font-size:17px; line-height:1.3; color:var(--cl-ink); font-weight:700; }
 
 /* --- 操作中のユーザー：コメント領域と地続きに見えないよう、面と枠で明確に切る --- */
-#cl-users{ padding:14px 16px; background:var(--cl-key-50); border-bottom:1px solid var(--cl-key-200); flex:0 0 auto; }
+/* ユーザー欄は「伸びっぱなしにしない」。人数ぶん素直に伸ばすと、コメント一覧の場所を奪い、
+   12人を超えると「新しいユーザーを追加」の行が画面外へ出て、追加そのものができなくなる。
+   欄全体に上限を置き、中の一覧だけをスクロールさせて、追加の行は必ず下に残す。 */
+#cl-users{ padding:14px 16px; background:var(--cl-key-50); border-bottom:1px solid var(--cl-key-200);
+  flex:0 0 auto; display:flex; flex-direction:column; max-height:55vh; }
 .cl-users-label{ font-size:12px; font-weight:700; color:var(--cl-gray-700); line-height:1.3;
-  display:flex; align-items:center; gap:5px; margin-bottom:6px; }
-.cl-users-row{ display:flex; align-items:stretch; gap:8px; }
+  display:flex; align-items:center; gap:5px; margin-bottom:6px; flex:0 0 auto; }
+.cl-users-row{ display:flex; align-items:stretch; gap:8px; flex:0 0 auto; }
 
 /* --- コンボボックス（プルダウン＋絞り込み） --- */
 .cl-combo{ position:relative; flex:1 1 auto; min-width:0; }
@@ -211,14 +215,24 @@ html.cl-open #cl-sidebar{ display:flex; }
 /* --- ユーザー管理パネル --- */
 #cl-master{ display:none; background:var(--cl-white); border:1px solid var(--cl-border);
   border-radius:8px; padding:12px; margin-top:10px; }
-#cl-master.open{ display:block; }
-.cl-master-note{ font-size:12px; line-height:1.6; color:var(--cl-mid); margin-bottom:10px; }
-.cl-master-sub{ font-size:12px; font-weight:700; color:var(--cl-gray-700); margin:0 0 6px; }
+#cl-master.open{ display:flex; flex-direction:column; min-height:0; flex:1 1 auto; }
+.cl-master-note{ font-size:12px; line-height:1.6; color:var(--cl-mid); margin-bottom:10px; flex:0 0 auto; }
+.cl-master-sub{ font-size:12px; font-weight:700; color:var(--cl-gray-700); margin:0 0 6px; flex:0 0 auto; }
+/* 一覧だけが伸び縮みする。上の説明・絞り込みと、下の「追加」は常に見える位置に固定される */
+#cl-master-list{ flex:1 1 auto; min-height:56px; overflow-y:auto; overscroll-behavior:contain;
+  margin:0 -6px; padding:2px 6px; }
+/* 絞り込みは人数が増えたときだけ出す。数人しかいないのに検索欄があると、ただの雑音になる */
+.cl-master-filter{ display:flex; align-items:center; gap:6px; margin:0 0 8px; padding:6px 8px;
+  border:1px solid var(--cl-gray-400); border-radius:6px; color:var(--cl-gray-600); flex:0 0 auto; }
+.cl-master-filter:focus-within{ border-color:var(--cl-primary); box-shadow:0 0 0 2px var(--cl-key-200); }
+.cl-master-filter input{ flex:1 1 auto; min-width:0; border:none; outline:none; background:transparent;
+  font:400 13px/1.5 var(--cl-font); letter-spacing:.02em; color:var(--cl-text); padding:0; }
+.cl-master-filter input::placeholder{ color:var(--cl-gray-400); }
 /* 既存の行も新規の行も「色 → 名前 → 操作」の同じ並びにする。
    色の位置が行によって左右する状態は、それだけで操作を迷わせる */
 .cl-master-item,.cl-master-add{ display:grid; grid-template-columns:28px 1fr auto; gap:8px;
   align-items:center; margin-bottom:8px; }
-.cl-master-add{ margin:0; padding-top:12px; border-top:1px solid var(--cl-border); }
+.cl-master-add{ margin:0; padding-top:12px; border-top:1px solid var(--cl-border); flex:0 0 auto; }
 .cl-master-item input[type=text],.cl-master-add input[type=text]{ min-width:0; padding:6px 8px;
   font:400 13.5px/1.5 var(--cl-font); letter-spacing:.02em; border:1px solid var(--cl-gray-400);
   border-radius:6px; color:var(--cl-text); background:var(--cl-white); }
@@ -285,6 +299,15 @@ html.cl-open #cl-sidebar{ display:flex; }
 .cl-menu-back{ color:var(--cl-mid); font-size:12.5px; }
 .cl-menu-head{ padding:6px 10px 4px; font-size:11.5px; font-weight:700; color:var(--cl-gray-700); }
 .cl-rmenu{ position:relative; margin-left:auto; display:flex; }
+/* 担当者を選ぶ一覧も、操作中のユーザー欄と同じ指の動かし方にそろえる（絞り込み＋矢印キー） */
+.cl-menu-item.on{ background:var(--cl-key-100); color:var(--cl-key-1000); }
+.cl-menu-item[data-danger].on{ background:var(--cl-red-50); color:var(--cl-danger); }
+.cl-menu-filter{ display:flex; align-items:center; gap:6px; margin:4px 2px 6px; padding:6px 8px;
+  border:1px solid var(--cl-gray-400); border-radius:6px; color:var(--cl-gray-600); }
+.cl-menu-filter:focus-within{ border-color:var(--cl-primary); box-shadow:0 0 0 2px var(--cl-key-200); }
+.cl-menu-filter input{ flex:1 1 auto; min-width:0; border:none; outline:none; background:transparent;
+  font:400 13px/1.5 var(--cl-font); letter-spacing:.02em; color:var(--cl-text); padding:0; }
+.cl-menu-empty{ padding:10px; font-size:12.5px; color:var(--cl-mid); text-align:center; }
 
 /* --- 優先度（旧「ラベル」）。クリックで 必須 → 要望 → 軽微 → なし と巡回 --- */
 .cl-chip{ display:inline-flex; align-items:center; font:700 11.5px/1.4 var(--cl-font); letter-spacing:.02em;
@@ -473,6 +496,10 @@ html.cl-guide-open #cl-guide{ display:flex; }
     <div id="cl-master">
       <div class="cl-master-note">色を変えると、その人が書いた既存のピン・ハイライトにも即反映されます。</div>
       <div class="cl-master-sub">登録されているユーザー</div>
+      <div class="cl-master-filter" id="cl-master-filter" hidden>
+        <svg class="cl-i" data-s="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.6 21 13.3 14.7c-.5.4-1.075.717-1.725.95-.65.233-1.342.35-2.075.35-1.817 0-3.354-.629-4.612-1.887C3.629 12.854 3 11.317 3 9.5s.629-3.354 1.888-4.613C6.146 3.629 7.683 3 9.5 3s3.354.629 4.613 1.887C15.371 6.146 16 7.683 16 9.5c0 .733-.117 1.425-.35 2.075-.233.65-.55 1.225-.95 1.725L21 19.6 19.6 21ZM9.5 14c1.25 0 2.313-.438 3.188-1.313S14 10.75 14 9.5s-.438-2.313-1.312-3.188C11.813 5.438 10.75 5 9.5 5s-2.313.438-3.188 1.312C5.438 7.187 5 8.25 5 9.5s.438 2.313 1.312 3.187C7.187 13.562 8.25 14 9.5 14Z"/></svg>
+        <input type="text" id="cl-master-q" autocomplete="off" spellcheck="false" placeholder="名前で絞り込む" aria-label="登録されているユーザーを名前で絞り込む">
+      </div>
       <div id="cl-master-list"></div>
       <div class="cl-master-sub" style="margin-top:12px">新しいユーザーを追加</div>
       <div class="cl-master-add">
@@ -1057,11 +1084,12 @@ html.cl-guide-open #cl-guide{ display:flex; }
 (function () {
   'use strict';
   if (window.__commentLayer) return;
-  var VERSION = '2.6.0';
+  var VERSION = '2.7.0';
 
   var comments = [], users = [], pinMode = false, draft = null, dirty = false, activeId = null, booted = false;
   var activeUserId = null, toastTimer = null;
   var openMenuId = null, openMenuRid = null, menuMode = 'main';
+  var assignQuery = '', assignIndex = -1;
   // 新規ユーザーに割り当てる色。DADSのプリミティブから、キーカラー（青）と紛れない色相を選び、
   // ピンの白文字が読める明度（白とのコントラスト比 4.5 以上）のものだけを採ってある
   var USER_PALETTE = ['#008299', '#c74700', '#197a4b', '#5c10be', '#aa00aa', '#0066be', '#a90000', '#507500'];
@@ -1094,7 +1122,8 @@ html.cl-guide-open #cl-guide{ display:flex; }
     warn: 'M1 21 12 2l11 19H1Zm3.45-2h15.1L12 6 4.45 19ZM12 18c.283 0 .52-.096.712-.288A.968.968 0 0 0 13 17a.968.968 0 0 0-.288-.712A.968.968 0 0 0 12 16a.968.968 0 0 0-.712.288A.968.968 0 0 0 11 17c0 .283.096.52.288.712.191.192.429.288.712.288Zm-1-3h2v-5h-2v5Z',
     pencilSm: 'M5 19h1.4l8.6-8.6-1.4-1.4L5 17.6V19Zm12.85-8.6L7.25 21H3v-4.25l10.6-10.6 4.25 4.25Z',
     person: 'M12 12c-1.1 0-2.042-.392-2.825-1.175C8.392 10.042 8 9.1 8 8s.392-2.042 1.175-2.825C9.958 4.392 10.9 4 12 4s2.042.392 2.825 1.175C15.608 5.958 16 6.9 16 8s-.392 2.042-1.175 2.825C14.042 11.608 13.1 12 12 12Zm-8 8v-2.8c0-.567.146-1.087.438-1.563A2.91 2.91 0 0 1 5.6 14.55a14.843 14.843 0 0 1 3.15-1.163A13.76 13.76 0 0 1 12 13c1.1 0 2.183.129 3.25.387 1.067.259 2.117.646 3.15 1.163.483.25.87.612 1.162 1.087.292.476.438.996.438 1.563V20H4Z',
-    back: 'M9.55 18 3.55 12l6-6 1.425 1.425L7.4 11h13.05v2H7.4l3.575 3.575L9.55 18Z'
+    back: 'M9.55 18 3.55 12l6-6 1.425 1.425L7.4 11h13.05v2H7.4l3.575 3.575L9.55 18Z',
+    search: 'M19.6 21 13.3 14.7c-.5.4-1.075.717-1.725.95-.65.233-1.342.35-2.075.35-1.817 0-3.354-.629-4.612-1.887C3.629 12.854 3 11.317 3 9.5s.629-3.354 1.888-4.613C6.146 3.629 7.683 3 9.5 3s3.354.629 4.613 1.887C15.371 6.146 16 7.683 16 9.5c0 .733-.117 1.425-.35 2.075-.233.65-.55 1.225-.95 1.725L21 19.6 19.6 21ZM9.5 14c1.25 0 2.313-.438 3.188-1.313S14 10.75 14 9.5s-.438-2.313-1.312-3.188C11.813 5.438 10.75 5 9.5 5s-2.313.438-3.188 1.312C5.438 7.187 5 8.25 5 9.5s.438 2.313 1.312 3.187C7.187 13.562 8.25 14 9.5 14Z'
   };
   function svgIcon(name, size, cls) {
     return '<svg class="cl-i' + (cls ? ' ' + cls : '') + '" data-s="' + (size || 20) +
@@ -1147,6 +1176,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
 
     renderUsers();
     initUserCombo();
+    initMasterFilter();
     updateBadge();
     reanchorOrphans();            // 版をまたいだ資料でも、特定できる指摘はハイライトを貼り直す
     render();
@@ -1811,11 +1841,31 @@ html.cl-guide-open #cl-guide{ display:flex; }
     renderMasterList();
   }
 
+  // 絞り込み欄は、人数がこれを超えたときだけ出す。
+  // 数人しかいないのに検索欄があると、ただの雑音になる
+  var FILTER_FROM = 8;
+
   function renderMasterList() {
     var list = $('#cl-master-list');
     if (!list) return;
+
+    var filter = $('#cl-master-filter'), q = $('#cl-master-q');
+    var show = users.length > FILTER_FROM;
+    if (filter) filter.hidden = !show;
+    if (!show && q) q.value = '';
+    var needle = (show && q ? q.value : '').trim().toLowerCase();
+    var shown = needle
+      ? users.filter(function (u) { return String(u.name).toLowerCase().indexOf(needle) >= 0; })
+      : users;
+
     list.innerHTML = '';
-    users.forEach(function (u) {
+    if (!shown.length) {
+      var none = document.createElement('div');
+      none.className = 'cl-master-empty';
+      none.textContent = '該当するユーザーがいません';
+      list.appendChild(none);
+    }
+    shown.forEach(function (u) {
       var row = document.createElement('div');
       row.className = 'cl-master-item';
 
@@ -2133,6 +2183,17 @@ html.cl-guide-open #cl-guide{ display:flex; }
     nameEl.focus();
   }
 
+  // 絞り込みは行の描き直しだけで済ませる。全体を render() し直すと、
+  // 打っている最中に入力欄が作り直されてカーソルが飛ぶ
+  function initMasterFilter() {
+    var q = $('#cl-master-q');
+    if (!q) return;
+    q.addEventListener('input', function () { renderMasterList(); });
+    q.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { e.preventDefault(); q.value = ''; renderMasterList(); }
+    });
+  }
+
   // 「ユーザーを管理」は、押した人がまず新しい名前を打ちたいことが多い。
   // 開いた瞬間に入力欄へ入れて、もう一度クリックさせない
   function setMaster(open) {
@@ -2246,7 +2307,18 @@ html.cl-guide-open #cl-guide{ display:flex; }
       else if (e.key === 'ArrowLeft') { e.preventDefault(); guideGo(guideStep - 1); }
       return;
     }
+    // 担当者を選んでいる間は、操作中のユーザー欄と同じ指の動かし方にする。
+    // 入力中判定より前に置く（絞り込み欄にカーソルがあっても矢印で選べるように）
+    if (openMenuId && menuMode === 'assign' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowRight') { e.preventDefault(); moveAssign(1); return; }
+      if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') { e.preventDefault(); moveAssign(-1); return; }
+      if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); chooseAssign(); return; }
+    }
     if (e.key === 'Escape') {
+      // Escは1段ずつ戻る。担当者一覧からは元のメニューへ、そこから閉じる
+      if (openMenuId && menuMode === 'assign') {
+        menuMode = 'main'; assignQuery = ''; assignIndex = -1; render(); return;
+      }
       if (openMenuId) { closeMenu(); return; }
       if (comboOpen) { setCombo(false); return; }
       if (draft) { cancelDraft(); return; }
@@ -2569,6 +2641,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
 
     list.scrollTop = keepScroll;
     positionMenu();
+    if (openMenuId && menuMode === 'assign') wireAssignMenu();
     if (activeId) nodesFor(activeId).forEach(function (n) { n.classList.add('cl-active'); });
   }
 
@@ -2693,24 +2766,105 @@ html.cl-guide-open #cl-guide{ display:flex; }
 
   function assignMenuHTML(c, r, idAttr) {
     var cur = r ? r.author : c.author;
-    var rows = users.map(function (u) {
+    var needle = assignQuery.trim().toLowerCase();
+    var shown = needle
+      ? users.filter(function (u) { return String(u.name).toLowerCase().indexOf(needle) >= 0; })
+      : users;
+    var rows = shown.map(function (u, i) {
       var on = u.name === cur;
-      return '<button class="cl-menu-item" role="menuitemradio" aria-checked="' + (on ? 'true' : 'false') +
-        '" data-cl="assign-to"' + idAttr + ' data-uid="' + esc(u.id) + '">' +
+      return '<button class="cl-menu-item' + (i === assignIndex ? ' on' : '') +
+        '" role="menuitemradio" aria-checked="' + (on ? 'true' : 'false') +
+        '" data-cl="assign-to"' + idAttr + ' data-uid="' + esc(u.id) + '" data-i="' + i + '">' +
         '<span class="cl-author-dot" style="background:' + esc(safeColor(u.color)) + '"></span>' +
         '<span class="cl-menu-label">' + esc(u.name) + '</span>' +
         (on ? svgIcon('check', 16, 'cl-menu-check') : '') + '</button>';
     }).join('');
+    // 人数が増えたときだけ絞り込みを出すのは、ユーザー管理側と同じ基準
+    var filter = users.length > FILTER_FROM
+      ? '<div class="cl-menu-filter">' +
+          svgIcon('search', 16) +
+          '<input type="text" id="cl-assign-q" autocomplete="off" spellcheck="false" ' +
+          'placeholder="名前で絞り込む" aria-label="担当者を名前で絞り込む" value="' + esc(assignQuery) + '">' +
+        '</div>'
+      : '';
     return '<div class="cl-menu" role="menu">' +
       '<button class="cl-menu-item cl-menu-back" data-cl="menu-back"' + idAttr + '>' +
         svgIcon('back', 18) + '戻る</button>' +
       '<div class="cl-menu-sep"></div>' +
-      '<div class="cl-menu-head">担当者を選ぶ</div>' + rows + '</div>';
+      '<div class="cl-menu-head">担当者を選ぶ</div>' + filter +
+      (rows || '<div class="cl-menu-empty">該当するユーザーがいません</div>') + '</div>';
+  }
+
+  /* 担当者一覧のキーボード操作。
+     ここをコンボボックスに作り替えると、ポップアップの中にポップアップを開くことになり、
+     380pxのサイドバーでは開く先が無い。見た目はメニューのまま、
+     指の動かし方（絞り込み・上下左右・Enter）だけを操作中のユーザー欄とそろえる。 */
+  function allAssignRows() {
+    return Array.prototype.slice.call(document.querySelectorAll('#cl-list [data-cl="assign-to"]'));
+  }
+  // 絞り込みで隠れた行は、矢印キーでも飛ばす
+  function assignRows() {
+    return allAssignRows().filter(function (el) { return !el.hidden; });
+  }
+  function paintAssign() {
+    var rows = assignRows();
+    for (var i = 0; i < rows.length; i++) rows[i].classList.toggle('on', i === assignIndex);
+  }
+  function moveAssign(dir) {
+    var rows = assignRows();
+    if (!rows.length) return;
+    assignIndex = ((assignIndex < 0 ? (dir > 0 ? -1 : 0) : assignIndex) + dir + rows.length) % rows.length;
+    paintAssign();
+    var el = rows[assignIndex];
+    if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+  }
+  function chooseAssign() {
+    var rows = assignRows();
+    if (assignIndex >= 0 && rows[assignIndex]) rows[assignIndex].click();
+  }
+  // 絞り込みは行の描き直しだけで済ませ、入力欄は作り直さない（カーソルが飛ばないように）
+  function wireAssignMenu() {
+    var q = $('#cl-assign-q');
+    if (q) {
+      q.oninput = function () {
+        assignQuery = q.value;
+        assignIndex = -1;
+        var menu = $('#cl-list .cl-menu');
+        if (!menu) return;
+        var needle = assignQuery.trim().toLowerCase();
+        var visible = 0;
+        allAssignRows().forEach(function (row) {
+          var name = row.querySelector('.cl-menu-label').textContent.toLowerCase();
+          var hit = !needle || name.indexOf(needle) >= 0;
+          row.hidden = !hit;
+          if (hit) row.setAttribute('data-i', visible++);
+        });
+        var empty = menu.querySelector('.cl-menu-empty');
+        if (!empty) {
+          empty = document.createElement('div');
+          empty.className = 'cl-menu-empty';
+          empty.textContent = '該当するユーザーがいません';
+          menu.appendChild(empty);
+        }
+        empty.hidden = visible > 0;
+        paintAssign();
+      };
+      requestAnimationFrame(function () { q.focus(); });
+    }
+    // マウスを重ねたらそれが最優先。コンボボックス側と同じ約束にする
+    allAssignRows().forEach(function (row) {
+      row.addEventListener('mousemove', function () {
+        assignIndex = assignRows().indexOf(row);
+        paintAssign();
+      });
+    });
+    paintAssign();
   }
 
   function closeMenu(skipRender) {
     if (openMenuId === null && openMenuRid === null && menuMode === 'main') return;
     openMenuId = null; openMenuRid = null; menuMode = 'main';
+    assignQuery = ''; assignIndex = -1;
     if (!skipRender) render();
   }
 
@@ -2923,8 +3077,8 @@ html.cl-guide-open #cl-guide{ display:flex; }
       openMenuId = rsame ? null : rmid; openMenuRid = rsame ? null : rrid; menuMode = 'main';
       render();
     }
-    else if (a === 'assign') { menuMode = 'assign'; render(); }
-    else if (a === 'menu-back') { menuMode = 'main'; render(); }
+    else if (a === 'assign') { menuMode = 'assign'; assignQuery = ''; assignIndex = -1; render(); }
+    else if (a === 'menu-back') { menuMode = 'main'; assignQuery = ''; assignIndex = -1; render(); }
     else if (a === 'assign-to') {
       commit({ type: 'reassign', id: t.getAttribute('data-id'),
                replyId: t.getAttribute('data-rid') || null, userId: t.getAttribute('data-uid') });
@@ -3019,4 +3173,4 @@ html.cl-guide-open #cl-guide{ display:flex; }
   };
 })();
 </script>
-<!-- ===== COMMENT-LAYER v2.6.0 : END ===== -->
+<!-- ===== COMMENT-LAYER v2.7.0 : END ===== -->

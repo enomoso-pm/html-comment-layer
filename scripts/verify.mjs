@@ -1174,6 +1174,106 @@ try {
   ok('一覧の下端で「…」を開いてもメニューが見切れない',
      r41c.メニューが出た && r41c.上下が一覧に収まる && r41c.担当者一覧も収まる, JSON.stringify(r41c));
 
+  // 41d. 人数が増えてもユーザー管理が破綻しない。
+  //      v2.6.0 までは人数ぶん素直に伸びていたので、12人で「新しいユーザーを追加」の行が
+  //      画面外へ出て、追加そのものができなくなっていた（袋小路）
+  const r41d = JSON.parse(await b.evalJS(`
+    const res = {};
+    const setUsers = n => {
+      while (__commentLayer.users.length > 1)
+        __commentLayer.commit({ type:'user-delete', id: __commentLayer.users[__commentLayer.users.length-1].id });
+      for (let i = __commentLayer.users.length; i < n; i++)
+        __commentLayer.commit({ type:'user-add', user:{ id:'u-sc'+i, name:'負荷レビュアー'+(i+1), color:'#008299' } });
+    };
+    __commentLayer.setSidebar(true);
+    for (const n of [5, 12, 30]) {
+      setUsers(n);
+      __commentLayer.setMaster(true);
+      const sb = document.getElementById('cl-sidebar').getBoundingClientRect();
+      const addRow = document.querySelector('.cl-master-add').getBoundingClientRect();
+      const list = document.getElementById('cl-list').getBoundingClientRect();
+      const ml = document.getElementById('cl-master-list');
+      res['n' + n] = {
+        追加欄が画面内: addRow.bottom <= sb.bottom + 1 && addRow.top >= sb.top - 1,
+        一覧に高さが残る: Math.round(list.height) >= 60,
+        管理一覧がスクロールする: ml.scrollHeight > ml.clientHeight + 1,
+        絞り込みが出る: !document.getElementById('cl-master-filter').hidden
+      };
+    }
+    // 絞り込みが効くか（30人の状態のまま）
+    const q = document.getElementById('cl-master-q');
+    q.value = 'レビュアー30';
+    q.dispatchEvent(new Event('input', { bubbles: true }));
+    res.絞り込み後の件数 = document.querySelectorAll('#cl-master-list .cl-master-item').length;
+    q.value = 'そんな名前はいない';
+    q.dispatchEvent(new Event('input', { bubbles: true }));
+    res.該当なし表示 = !!document.querySelector('#cl-master-list .cl-master-empty');
+    q.value = '';
+    q.dispatchEvent(new Event('input', { bubbles: true }));
+    res.戻せる = document.querySelectorAll('#cl-master-list .cl-master-item').length === 30;
+    __commentLayer.setMaster(false);
+    return JSON.stringify(res);
+  `));
+  ok('ユーザーが増えても「新しいユーザーを追加」は常に押せる位置に残る',
+     r41d.n5.追加欄が画面内 && r41d.n12.追加欄が画面内 && r41d.n30.追加欄が画面内, JSON.stringify(r41d));
+  ok('ユーザー管理は一覧だけがスクロールし、コメント一覧の高さも残る',
+     r41d.n30.管理一覧がスクロールする && r41d.n5.一覧に高さが残る
+       && r41d.n12.一覧に高さが残る && r41d.n30.一覧に高さが残る, JSON.stringify(r41d));
+  ok('絞り込みは人数が増えたときだけ出て、名前で絞り込める',
+     !r41d.n5.絞り込みが出る && r41d.n12.絞り込みが出る
+       && r41d.絞り込み後の件数 === 1 && r41d.該当なし表示 && r41d.戻せる, JSON.stringify(r41d));
+
+  // 41e. 担当者一覧も、人数が増えたら同じ作法（絞り込み＋矢印キー）で選べる。
+  //      コンボボックスには作り替えない（ポップアップの中にポップアップを開くことになるため）
+  const r41e = JSON.parse(await b.evalJS(`
+    __commentLayer.setSidebar(true);
+    const card = () => document.querySelector('#cl-list .cl-item');
+    const open = () => {
+      if (__commentLayer.openMenuId) card().querySelector('[data-cl="menu"]').click();
+      card().querySelector('[data-cl="menu"]').click();
+      card().querySelector('[data-cl="assign"]').click();
+    };
+    open();
+    const 絞り込みが出る = !!document.getElementById('cl-assign-q');
+    const rows = () => [...document.querySelectorAll('#cl-list [data-cl="assign-to"]')].filter(e => !e.hidden);
+    const onIdx = () => rows().findIndex(e => e.classList.contains('on'));
+    const send = k => document.dispatchEvent(new KeyboardEvent('keydown', { key:k, bubbles:true, cancelable:true }));
+
+    const 件数 = rows().length;
+    send('ArrowDown'); const 下 = onIdx();
+    send('ArrowRight'); const 右 = onIdx();
+    send('ArrowUp'); const 上 = onIdx();
+    send('ArrowLeft'); const 左 = onIdx();   // 先頭からさらに上へ→末尾へ回り込む
+
+    // 絞り込むと候補が減り、矢印は隠れた行を飛ばす
+    const q = document.getElementById('cl-assign-q');
+    q.value = 'レビュアー30';
+    q.dispatchEvent(new Event('input', { bubbles: true }));
+    const 絞り込み後 = rows().length;
+    send('ArrowDown');
+    const 絞り込み後に選べる = onIdx() === 0;
+
+    // Enter で決定できる
+    const uid = rows()[0].getAttribute('data-uid');
+    const name = __commentLayer.users.filter(u => u.id === uid)[0].name;
+    const cid = card().id.replace('cl-item-','');
+    send('Enter');
+    const 決定 = __commentLayer.comments.filter(c => c.id === cid)[0].author === name;
+
+    // Esc は1段ずつ：担当者一覧 → 元のメニュー → 閉じる
+    open();
+    send('Escape'); const 一段目 = __commentLayer.menuMode === 'main' && __commentLayer.openMenuId !== null;
+    send('Escape'); const 二段目 = __commentLayer.openMenuId === null;
+    return JSON.stringify({ 絞り込みが出る, 件数, 下, 右, 上, 左, 絞り込み後, 絞り込み後に選べる, 決定, 一段目, 二段目 });
+  `));
+  ok('担当者一覧でも 上/左・下/右 の矢印キーで選べ、Enterで決定できる',
+     r41e.下 === 0 && r41e.右 === 1 && r41e.上 === 0 && r41e.左 === r41e.件数 - 1
+       && r41e.決定, JSON.stringify(r41e));
+  ok('担当者一覧の絞り込みが効き、隠れた候補は矢印で飛ばされる',
+     r41e.絞り込みが出る && r41e.絞り込み後 === 1 && r41e.絞り込み後に選べる, JSON.stringify(r41e));
+  ok('担当者一覧のEscは1段ずつ戻る（一覧 → 元のメニュー → 閉じる）',
+     r41e.一段目 && r41e.二段目, JSON.stringify(r41e));
+
   // 42. 新規ユーザーの色は「いま使われている色から最も遠い色」を選ぶ。
   //     v2.5 までは配列の先頭から順に配っていたので、3人目で1人目とほぼ同じ色になっていた
   //     （OKLab距離 0.116。0.15 を下回ると、ハイライトを見ても誰の指摘か分からない）
