@@ -1240,14 +1240,23 @@ try {
     __commentLayer.setSidebar(true);
     for (const n of [5, 12, 30]) {
       setUsers(n);
+      __commentLayer.setMaster(false);
+      const listClosed = Math.round(document.getElementById('cl-list').getBoundingClientRect().height);
       __commentLayer.setMaster(true);
       const sb = document.getElementById('cl-sidebar').getBoundingClientRect();
+      const foot = document.querySelector('#cl-sidebar .cl-foot').getBoundingClientRect();
+      const panel = document.getElementById('cl-master').getBoundingClientRect();
       const addRow = document.querySelector('.cl-master-add').getBoundingClientRect();
-      const list = document.getElementById('cl-list').getBoundingClientRect();
+      const listOpen = Math.round(document.getElementById('cl-list').getBoundingClientRect().height);
       const ml = document.getElementById('cl-master-list');
       res['n' + n] = {
         追加欄が画面内: addRow.bottom <= sb.bottom + 1 && addRow.top >= sb.top - 1,
-        一覧に高さが残る: Math.round(list.height) >= 60,
+        // 重ねて出す＝開いてもコメント一覧の高さは1pxも変わらない
+        一覧の高さが変わらない: listClosed === listOpen,
+        一覧の高さ: listOpen,
+        パネルが浮いている: getComputedStyle(document.getElementById('cl-master')).position === 'absolute',
+        パネルが保存帯に被らない: panel.bottom <= foot.top + 1,
+        パネルの高さ: Math.round(panel.height),
         管理一覧がスクロールする: ml.scrollHeight > ml.clientHeight + 1,
         絞り込みが出る: !document.getElementById('cl-master-filter').hidden
       };
@@ -1268,9 +1277,12 @@ try {
   `));
   ok('ユーザーが増えても「新しいユーザーを追加」は常に押せる位置に残る',
      r41d.n5.追加欄が画面内 && r41d.n12.追加欄が画面内 && r41d.n30.追加欄が画面内, JSON.stringify(r41d));
-  ok('ユーザー管理は一覧だけがスクロールし、コメント一覧の高さも残る',
-     r41d.n30.管理一覧がスクロールする && r41d.n5.一覧に高さが残る
-       && r41d.n12.一覧に高さが残る && r41d.n30.一覧に高さが残る, JSON.stringify(r41d));
+  ok('ユーザー管理はコメントの上に重ねて開き、一覧の高さを奪わない',
+     [5, 12, 30].every(n => r41d['n' + n].パネルが浮いている && r41d['n' + n].一覧の高さが変わらない),
+     [5, 12, 30].map(n => `${n}人:一覧${r41d['n' + n].一覧の高さ}px`).join(' '));
+  ok('重ねたパネルは保存ボタンの帯に被らず、はみ出したぶんは中がスクロールする',
+     [5, 12, 30].every(n => r41d['n' + n].パネルが保存帯に被らない) && r41d.n30.管理一覧がスクロールする,
+     [5, 12, 30].map(n => `${n}人:パネル${r41d['n' + n].パネルの高さ}px`).join(' '));
   ok('絞り込みは人数が増えたときだけ出て、名前で絞り込める',
      !r41d.n5.絞り込みが出る && r41d.n12.絞り込みが出る
        && r41d.絞り込み後の件数 === 1 && r41d.該当なし表示 && r41d.戻せる, JSON.stringify(r41d));
@@ -1374,11 +1386,13 @@ try {
     for (let g = 0; g <= 3; g++) {
       await b.goto('file://' + encodeURI(cur));
       gens.push(JSON.parse(await b.evalJS(`
+        // 数えるのはレイヤーが持ち込んだものだけ。実サイトの保存ページは資料側の
+        // スクリプトが要素もidも増やすので、全体を数えると資料の性質を測ることになる
         const ids = {};
-        document.querySelectorAll('[id]').forEach(e => { ids[e.id] = (ids[e.id]||0)+1; });
+        document.querySelectorAll('[id^="cl-"]').forEach(e => { ids[e.id] = (ids[e.id]||0)+1; });
         return JSON.stringify({
           pins: document.querySelectorAll('[id="cl-pins"]').length,
-          要素数: document.getElementsByTagName('*').length,
+          要素数: document.querySelectorAll('[id^="cl-"]').length,
           重複id: Object.keys(ids).filter(k => ids[k] > 1)
         });`)));
       if (g === 3) break;
@@ -1398,7 +1412,7 @@ try {
   ok('保存して開き直すのを繰り返しても、ピンの器が増えない',
      r8b.every(g => g.pins === 1),
      r8b.map(g => g.pins + '個').join(' → '));
-  ok('保存を繰り返してもidが重複しない',
+  ok('保存を繰り返してもレイヤーのidが重複しない',
      r8b.every(g => g.重複id.length === 0),
      r8b.map(g => g.重複id.join('/') || 'なし').join(' → '));
   ok('保存を繰り返してもレイヤーぶんの要素が増え続けない',
