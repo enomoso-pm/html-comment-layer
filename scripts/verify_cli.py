@@ -164,6 +164,24 @@ def main():
         ok("docId が引き継がれる", mc["docId"] == m1["docId"], mc.get("docId"))
         ok("lineage に carry が積まれる", mc["lineage"][-1]["op"] == "carry")
 
+        # ---- --strip が落とす実行時の印 ---------------------------------------------
+        # ★本文に同じ語を書いた資料で確かめる。このレイヤー自身を説明する資料は
+        #   「data-cl-host が焼き込まれていた」のように本文へ普通に書くので、
+        #   文書全体への部分一致で消すと本文から語が消える
+        prose = tmp / "prose.html"
+        prose.write_text(
+            '<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8">'
+            '<title>属性の話をする資料</title></head><body><div class="wrap" data-cl-host>'
+            '<p>書き出したファイルに data-cl-host が焼き込まれていた。</p>'
+            '</div></body></html>', encoding="utf-8")
+        run(prose, "--in-place")
+        run(prose, "--strip", "-o", str(tmp / "prose_bare.html"))
+        bare = (tmp / "prose_bare.html").read_text(encoding="utf-8")
+        ok("--strip が焼き込まれた data-cl-host を落とす",
+           'class="wrap" data-cl-host' not in bare and "data-cl-host>" not in bare, bare[:200])
+        ok("--strip が本文の「data-cl-host」という語を消さない",
+           "に data-cl-host が焼き込まれていた" in bare, bare[-300:])
+
         # ---- --merge の判定 --------------------------------------------------------
         parent = tmp / "parent_commented.html"
         shutil.copy2(base, parent)

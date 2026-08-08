@@ -234,6 +234,18 @@ def report_lineage(base, other, base_name, other_name, out=sys.stdout):
         print("         系譜  : 共通の版を特定できませんでした", file=out)
 
 
+def drop_runtime_attr(html, attr):
+    """実行時に付いた属性を落とす。★消してよいのはタグの中にある属性だけ。
+
+    本文に同じ語が書いてあっても消してはいけない。このレイヤー自身を説明する資料は
+    「書き出したファイルに data-cl-host が焼き込まれていた」のように本文へ普通に書くので、
+    文書全体に `\\s+attr` を掛けると本文から語が消える（実測で踏んだ）。
+    SKILL.md の「一般的な断片の部分一致で書かない」と同じ穴。
+    """
+    inner = re.compile(r'\s+%s(="[^"]*")?(?=[\s/>])' % re.escape(attr))
+    return re.sub(r'<[a-zA-Z][^>]*>', lambda m: inner.sub("", m.group(0)), html)
+
+
 def doc_title(html):
     m = re.search(r"<title[^>]*>(.*?)</title\s*>", html, re.S | re.I)
     return re.sub(r"\s+", " ", m.group(1)).strip() if m else ""
@@ -519,7 +531,7 @@ def main():
         # v2.14.1 より前に保存されたファイルは data-cl-host が host 要素に焼き込まれたままで、
         # ブロック自体の外にあるためレイヤー除去では消えない（ピンモードの十字カーソルが
         # 無関係な要素に残る）。--strip では実行時の印として一緒に落とす
-        new = re.sub(r'\s+data-cl-host(="[^"]*")?', "", new)
+        new = drop_runtime_attr(new, "data-cl-host")
     else:
         block = ASSET.read_text(encoding="utf-8").rstrip("\n")
         # 版の系譜の起点。既存レイヤーがあればその meta を引き継ぐ（無ければ新規注入）。
