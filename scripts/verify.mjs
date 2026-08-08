@@ -2125,7 +2125,7 @@ print(json.dumps({
     ok('--merge の結果を開くと、引用が一意な指摘はハイライトが復元される',
        r46b.Aのハイライト && r46b.Bのハイライト, JSON.stringify(r46b));
     // 46c. まだレビューしていない資料に合流する場合、基準側の user-master は
-    //      アセット同梱の初期値（レビュアー1）であってデータではない。
+    //      アセット同梱の初期値（無記名）であってデータではない。
     //      これを「基準側優先」で残すと、同じ id を持つ相手の実名が初期値に潰される
     {
       const plain = pathm.join(osm.tmpdir(), 'cl-plain-' + Date.now().toString(36) + '.html');
@@ -2150,7 +2150,7 @@ print(json.dumps({
       const got = grab('user-master'), gotC = grab('comment-store');
       ok('--merge：レイヤーの無い資料に合流しても、相手のユーザーが初期値に潰されない',
          gotC.length >= 1 && got.some(g => g.name === RENAMED)
-           && !got.some(g => g.name === 'レビュアー1'),
+           && !got.some(g => g.name === '無記名'),
          `結果=${JSON.stringify(got.map(u => [u.id, u.name]))}`);
     }
 
@@ -2460,49 +2460,25 @@ print(json.dumps({
   ok('系譜: lineage は 200 件で打ち切られ、それでも gen は正しい',
      g46.lineage === 200 && g46.genの増分 === 205 && g46.先頭が捨てられた, JSON.stringify(g46));
 
+  // 版の系譜のUI（#cl-rev 一式）は v2.15 で撤去した。lineage は comment-meta に
+  // 持ち続け、分岐の検知は --merge（guard_different_doc() / report_lineage()）が
+  // 担う——UIはその表示に過ぎず、消しても検知機能そのものは失われない。
+  // ★直前の g46 が lineage を200件の上限まで埋めている。生の配列長では伸びを測れない
+  //   （上限に張り付いたまま先頭が捨てられるだけ）ので、gen と末尾エントリで見る
   const v46 = JSON.parse(await b.evalJS(`
-    const line = document.getElementById('cl-rev-line');
-    const list = document.getElementById('cl-rev-list');
-    const nameBtn = document.getElementById('cl-rev-name');
-    const 畳んである = list.hidden;
-    line.click();
-    const 開ける = !list.hidden && list.children.length > 0;
-    // 資料本体に版情報が出ていないこと（配布物に出てはいけない）
-    const host = document.querySelector('[data-cl-host]').cloneNode(true);
-    host.querySelectorAll('#cl-sidebar,#cl-dock,#cl-guide,#cl-guide-fab,#cl-toast,#cl-pins,#cl-rev,#cl-unver').forEach(e => e.remove());
-    const t = host.textContent;
-    // ★ 'rev-' のような一般的な断片で探すと、資料側の文章に偶然含まれて誤検知する
-    //   （楽天サンプルで実際に踏んだ）。この版だけが持つ実際のIDと、UI固有の文言で見る
-    const m = __commentLayer.meta;
-    const lin = m.lineage || [];
-    const prev = lin.filter(e => e.revId === m.parentRevId)[0];
-    return JSON.stringify({版情報: line.textContent, 畳んである, 開ける,
-      親のop: prev ? prev.op : null,
-      名前の誘導: nameBtn.hidden ? null : nameBtn.textContent,
-      本文に漏れている: ['この版:', m.docId, m.revId, m.parentRevId]
-        .filter(k => k && t.indexOf(k) >= 0)});
+    const genBefore = __commentLayer.meta.gen;
+    const k = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function(){};
+    __commentLayer.exportHTML();
+    HTMLAnchorElement.prototype.click = k;
+    const m = __commentLayer.meta, lin = m.lineage;
+    return JSON.stringify({
+      UIが無い: document.getElementById('cl-rev') === null,
+      genが進んだ: m.gen === genBefore + 1,
+      末尾がいまの版: lin[lin.length - 1].revId === m.revId
+    });
   `));
-  ok('版情報: コメントUI側に1行だけ出て、既定は畳んである',
-     /^この版: /.test(v46.版情報) && v46.畳んである, JSON.stringify(v46));
-  // ★CLI が作った版を「名前未設定の人が保存」と書かない。この行はいちばん読まれる
-  ok('版情報: CLI が作った版は「コマンドで…」と書く（人が保存したことにしない）',
-     v46.版情報.indexOf('初版') >= 0 || !/名前未設定の人 の版から派生/.test(v46.版情報) ||
-     v46.親のop === 'save', JSON.stringify(v46));
-  ok('版情報: クリックで系譜を開ける（開く取っ手が常にある）', v46.開ける, JSON.stringify(v46));
-  ok('版情報: 資料本体には一切出さない', v46.本文に漏れている.length === 0, JSON.stringify(v46));
-
-  const n46 = JSON.parse(await b.evalJS(`
-    const nameBtn = document.getElementById('cl-rev-name');
-    const u = __commentLayer.users.filter(x => x.id === __commentLayer.activeUserId)[0];
-    __commentLayer.commit({type:'user-update', id: u.id, field:'name', value:'レビュアー1'});
-    __commentLayer.render();
-    const 既定なら誘導が出る = !nameBtn.hidden;
-    __commentLayer.commit({type:'user-update', id: u.id, field:'name', value:'山本（技術リード）'});
-    __commentLayer.render();
-    return JSON.stringify({既定なら誘導が出る, 名前を入れると消える: nameBtn.hidden});
-  `));
-  ok('版情報: 名前が既定のままなら設定への誘導が出て、入れると消える',
-     n46.既定なら誘導が出る && n46.名前を入れると消える, JSON.stringify(n46));
+  ok('版の系譜はUIに出ないが、保存すると comment-meta に積まれ続ける（分岐の検知は --merge に残る）',
+     v46.UIが無い && v46.genが進んだ && v46.末尾がいまの版, JSON.stringify(v46));
 
   const t46 = JSON.parse(await b.evalJS(`
     const k = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function(){};

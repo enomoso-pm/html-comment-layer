@@ -8,7 +8,7 @@
          （無ければ .wrap → main → article → .container → body の順で自動選択）
      =================================================================== -->
 
-<script id="user-master" type="application/json">[{"id":"u1","name":"レビュアー1","color":"#0084A3"}]</script>
+<script id="user-master" type="application/json">[{"id":"u1","name":"無記名","color":"#0084A3"}]</script>
 <script id="comment-store" type="application/json">[]</script>
 <script id="comment-meta" type="application/json">{}</script>
 
@@ -302,20 +302,6 @@ html.cl-open #cl-sidebar{ display:flex; }
   border:0; border-bottom:1px solid var(--cl-gray-300); padding:8px 16px; }
 #cl-unver[hidden]{ display:none; }
 #cl-unver:hover{ background:var(--cl-orange-100, var(--cl-orange-50)); }
-/* 版の系譜。既定は畳んだ状態。開く取っ手（この行そのもの）が常に見えている */
-#cl-rev{ border-bottom:1px solid var(--cl-gray-300); background:var(--cl-gray-50); }
-#cl-rev[hidden]{ display:none; }
-#cl-rev-line{ display:block; width:100%; text-align:left; cursor:pointer; border:0; background:none;
-  font:400 11.5px/1.6 var(--cl-font); color:var(--cl-gray-600); padding:6px 16px; }
-#cl-rev-line:hover{ color:var(--cl-text); text-decoration:underline; }
-#cl-rev-name{ display:block; margin:0 16px 6px; cursor:pointer; border:0; background:none; padding:0;
-  font:700 11.5px/1.6 var(--cl-font); color:var(--cl-orange-1000); text-decoration:underline; }
-#cl-rev-name[hidden]{ display:none; }
-#cl-rev-list{ list-style:none; margin:0; padding:0 16px 8px; font:400 11px/1.7 var(--cl-font);
-  color:var(--cl-gray-600); max-height:150px; overflow-y:auto; }
-#cl-rev-list[hidden]{ display:none; }
-#cl-rev-list li{ display:flex; gap:8px; }
-#cl-rev-list b{ font-weight:700; color:var(--cl-text); }
 
 /* --- 3点リーダーのメニュー（編集・削除・完了をここに集約する） ---
        カードの中に置く。body 直下に出すと本文テキストの走査から除外し忘れる穴が空く */
@@ -603,16 +589,6 @@ html.cl-guide-open #cl-guide{ display:flex; }
         </button>
       </div>
     </div>
-  </div>
-
-  <!-- 版の系譜。ファイル往復は分岐するので「いま何代目の、誰の版から派生したのか」を1行だけ出す。
-       ★資料本体には絶対に出さない（配布物に版情報が出てはいけない）。ここはコメントUI側 -->
-  <div id="cl-rev" hidden>
-    <button type="button" id="cl-rev-line" data-cl="rev-toggle" aria-expanded="false"></button>
-    <!-- 名前の設定は系譜の開閉と別の取っ手にする。1つの行に2つの意味を持たせると、
-         名前が未設定のあいだ系譜を開く手段が無くなる -->
-    <button type="button" id="cl-rev-name" data-cl="master" hidden>名前を設定</button>
-    <ol id="cl-rev-list" hidden></ol>
   </div>
 
   <div class="cl-listbar">
@@ -1244,7 +1220,6 @@ html.cl-guide-open #cl-guide{ display:flex; }
       <tr><td>「完了済み ○件」の区切り</td><td>完了した指摘を畳む / 開く（件数は畳んでも出たまま）</td></tr>
       <tr><td>「AIが完了にした ○件が未検算です」</td><td>まだ確認していないカードへ移動（完了を畳んでいても開き直します）</td></tr>
       <tr><td>カードの「確認済みにする」</td><td>AIが完了にしたものを、自分の目で見て確認したことにする</td></tr>
-      <tr><td>一覧の上の「この版: …」</td><td>この資料が辿ってきた版の一覧を開く / 閉じる</td></tr>
       <tr><td>返信の「…」</td><td>編集 / 担当者を変更 / 削除</td></tr>
       <tr><td>名前の横のチップ</td><td>優先度を 必須 → 要望 → 軽微 → なし と切り替え</td></tr>
       <tr><td>ボタンにマウスを重ねる</td><td>そのボタンのショートカットが出ます</td></tr>
@@ -1297,7 +1272,9 @@ html.cl-guide-open #cl-guide{ display:flex; }
   // 新規ユーザーに割り当てる色。DADSのプリミティブから、キーカラー（青）と紛れない色相を選び、
   // ピンの白文字が読める明度（白とのコントラスト比 4.5 以上）のものだけを採ってある
   var USER_PALETTE = ['#008299', '#c74700', '#197a4b', '#5c10be', '#aa00aa', '#0066be', '#a90000', '#507500'];
-  var DEFAULT_USER = { id: 'u1', name: 'レビュアー1', color: '#008299' };
+  // ★色は user-master 側の既定値（テンプレート冒頭の <script id="user-master">）と揃える。
+  //   別々に持つと、タグが空・壊れているときだけ色が変わるという実害の薄い穴が開く
+  var DEFAULT_USER = { id: 'u1', name: '無記名', color: '#0084A3' };
   var host = null, pinBox = null, savedRange = null;
   var SMOOTH = matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
   // 保存値は must / want / nit のまま（過去の資料と、書き出したJSONを読むAIの互換のため）。
@@ -1496,68 +1473,6 @@ html.cl-guide-open #cl-guide{ display:flex; }
   function metaBy() {
     var u = currentUser();
     return (u && u.name) || '';
-  }
-  function isDefaultName(name) {
-    var n = String(name == null ? '' : name).trim();
-    return !n || n === DEFAULT_USER.name;
-  }
-
-  /* ---------- 版情報の1行 ----------
-     ★資料本体には出さない。ここに出すのは「気づかずに古い版を直していた」を防ぐため。
-     名前が既定値のままなら、ここで「名前未設定」を出して設定への入口にする。
-     ★保存トーストには足さない。あれは「保存先はこのPCの中だけ、そのファイルを送り返して」
-       という、いちばん落としたくない念押しを担っている。並べると両方読まれない。 */
-  var OP_JA = { inject: '作成', save: '保存', merge: '合流', carry: '引き継ぎ',
-                'in-place': '更新', update: '更新', ack: '確認',
-                'apply-state': 'AIの完了を反映' };
-  // 派生元をどう名乗るか。★op を見ないと、CLIが作った版まで「名前未設定の人が保存」になる。
-  // ブラウザ保存（save）のときだけ人の名前を出す。それ以外は人が保存したわけではない
-  var OP_ORIGIN = { inject: 'コマンドで作成', 'in-place': 'コマンドで更新',
-                    update: 'コマンドで更新', carry: 'コマンドで引き継ぎ', merge: 'コマンドで合流',
-                    'apply-state': 'コマンドでAIの完了を反映' };
-  function originOf(prev) {
-    if (!prev) return '前の版から派生';
-    if (prev.op && prev.op !== 'save') return OP_ORIGIN[prev.op] || ('コマンドで' + prev.op);
-    // 派生元の名前は「そのとき誰だったか」という事実。未設定だったならそう書くだけで、
-    // ここを設定への誘導にはしない（直せるのは自分の名前であって、過去の版ではない）
-    return (isDefaultName(prev.by) ? '名前未設定の人' : prev.by) + ' の版から派生';
-  }
-  function renderRevLine() {
-    var box = $('#cl-rev'), line = $('#cl-rev-line'), list = $('#cl-rev-list');
-    if (!box || !line) return;
-    if (!meta || !meta.docId) { box.hidden = true; return; }
-    box.hidden = false;
-    var lin = Array.isArray(meta.lineage) ? meta.lineage : [];
-    // 派生元＝いまの版のひとつ前。lineage の末尾は自分自身なので、その手前を見る
-    var prev = null;
-    for (var i = lin.length - 1; i >= 0; i--) {
-      if (lin[i] && lin[i].revId === meta.parentRevId) { prev = lin[i]; break; }
-    }
-    var gen = typeof meta.gen === 'number' ? meta.gen : lin.length;
-    if (!meta.parentRevId) {
-      line.textContent = 'この版: 初版';
-    } else {
-      var at = prev ? fmtShort(prev.at) : '';
-      line.textContent = 'この版: ' + gen + '代目・' + originOf(prev) + (at ? '（' + at + '）' : '');
-    }
-    // 誘導は「自分の名前」に対して出す。次に保存する版が誰のものか分からなくなるのを防ぐ。
-    // ★保存トーストには足さない（あそこは送り返しの念押し専用）
-    var nameBtn = $('#cl-rev-name');
-    if (nameBtn) {
-      var mine = isDefaultName((currentUser() || {}).name);
-      nameBtn.hidden = !mine;
-      if (mine) nameBtn.textContent = '名前が未設定です。設定すると、この版が誰のものか残ります';
-    }
-    if (!list.hidden) {
-      list.innerHTML = lin.slice().reverse().map(function (e) {
-        // CLI が作った版に「名前未設定」と書くと、人が保存し忘れたように読める
-        var by = (e.op && e.op !== 'save' && e.op !== 'ack') ? 'コマンド'
-               : (isDefaultName(e.by) ? '名前未設定' : e.by);
-        return '<li><span>' + esc(fmtShort(e.at) || '—') + '</span>' +
-               '<b>' + esc(OP_JA[e.op] || e.op || '') + '</b>' +
-               '<span>' + esc(by) + '</span></li>';
-      }).join('');
-    }
   }
 
   /* ---------- 検算: AI完了のうち「本当に直ったか確認できていない」もの ----------
@@ -3349,7 +3264,6 @@ html.cl-guide-open #cl-guide{ display:flex; }
     // AI完了のうち検算できていない件数。★数えるのは「AIが完了にした件数」ではなく
     // 「確認が要る件数」。全部確認すれば 0 になって消える＝押せば減る目標があるので、
     // 常時1以上で固定されて誰も見なくなる、という警告バッジの死に方をしない
-    renderRevLine();
     var uv = $('#cl-unver');
     if (uv) {
       var n = unverifiedCount();
@@ -3969,13 +3883,6 @@ html.cl-guide-open #cl-guide{ display:flex; }
     else if (a === 'unver-jump') {
       var first = comments.filter(isUnverified)[0];
       if (first) { setSidebar(true); focusFromList(first.id); }
-    }
-    // 版情報の行。名前が未設定なら「ユーザーを管理」へ、そうでなければ系譜を開閉する
-    else if (a === 'rev-toggle') {
-      var rl = $('#cl-rev-list');
-      rl.hidden = !rl.hidden;
-      t.setAttribute('aria-expanded', rl.hidden ? 'false' : 'true');
-      renderRevLine();
     }
     else if (a === 'toggle-done') setHideDone(!hideDone);
     else if (a === 'label') cycleLabel(t.getAttribute('data-id'));

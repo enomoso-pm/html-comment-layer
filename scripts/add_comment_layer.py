@@ -593,7 +593,7 @@ def main():
             guard_different_doc(base_meta, other_meta, src.name, other.name, args.force)
             base_comments = load_store(block, "comment-store") or []
             # レイヤーがまだ無いファイルに合流するとき、いま block に入っているユーザーは
-            # アセット同梱の「レビュアー1」＝ただの初期値であってデータではない。
+            # アセット同梱の「無記名」＝ただの初期値であってデータではない。
             # これを基準側として優先すると、同じ id を持つ相手の実名が初期値に潰される
             base_users = (load_store(block, "user-master") or []) if found else []
             other_users = load_store(other_html, "user-master") or []
