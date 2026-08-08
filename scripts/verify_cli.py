@@ -182,6 +182,22 @@ def main():
         ok("--strip が本文の「data-cl-host」という語を消さない",
            "に data-cl-host が焼き込まれていた" in bare, bare[-300:])
 
+        # ★タグの中に絞るだけでも足りない。他の属性の値の中に同じ語があれば、
+        #   トークン単位で名前を比較しないと巻き込んで消してしまう
+        attrval = tmp / "attrval.html"
+        attrval.write_text(
+            '<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8">'
+            '<title>属性の話をする資料</title></head><body>'
+            '<div class="wrap" title="see data-cl-host here" data-cl-host>本文</div>'
+            '</body></html>', encoding="utf-8")
+        run(attrval, "--in-place")
+        run(attrval, "--strip", "-o", str(tmp / "attrval_bare.html"))
+        bare2 = (tmp / "attrval_bare.html").read_text(encoding="utf-8")
+        ok("--strip が他の属性の値の中の「data-cl-host」を消さない",
+           'title="see data-cl-host here"' in bare2, bare2[:250])
+        ok("--strip が同じタグの実際の data-cl-host 属性は落とす",
+           'title="see data-cl-host here" data-cl-host' not in bare2, bare2[:250])
+
         # ---- --merge の判定 --------------------------------------------------------
         parent = tmp / "parent_commented.html"
         shutil.copy2(base, parent)

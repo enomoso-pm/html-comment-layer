@@ -234,6 +234,11 @@ def report_lineage(base, other, base_name, other_name, out=sys.stdout):
         print("         系譜  : 共通の版を特定できませんでした", file=out)
 
 
+_ATTR_TOKEN_RE = re.compile(
+    r'\s+[a-zA-Z_:][-a-zA-Z0-9_:.]*(?:\s*=\s*"[^"]*"|\s*=\s*\'[^\']*\'|\s*=\s*[^\s"\'=<>`]+)?')
+_ATTR_NAME_RE = re.compile(r'^\s+([a-zA-Z_:][-a-zA-Z0-9_:.]*)')
+
+
 def drop_runtime_attr(html, attr):
     """実行時に付いた属性を落とす。★消してよいのはタグの中にある属性だけ。
 
@@ -241,9 +246,19 @@ def drop_runtime_attr(html, attr):
     「書き出したファイルに data-cl-host が焼き込まれていた」のように本文へ普通に書くので、
     文書全体に `\\s+attr` を掛けると本文から語が消える（実測で踏んだ）。
     SKILL.md の「一般的な断片の部分一致で書かない」と同じ穴。
+
+    タグの中にさえ絞れば十分ではない。**属性をトークン単位で切り出してから名前だけを
+    比較する**——単純に「タグの中で attr の直前に空白があれば消す」だと、他の属性の
+    値の中にたまたま同じ語が入っていても消えてしまう（`title="data-cl-host について"` の
+    ような資料が実在しうる。このリポジトリはこの属性名そのものを説明する資料を作るので、
+    値の中に単語として現れる可能性は他のプロジェクトより高い）。
     """
-    inner = re.compile(r'\s+%s(="[^"]*")?(?=[\s/>])' % re.escape(attr))
-    return re.sub(r'<[a-zA-Z][^>]*>', lambda m: inner.sub("", m.group(0)), html)
+    def strip_tag(m):
+        def repl(am):
+            nm = _ATTR_NAME_RE.match(am.group(0))
+            return "" if nm and nm.group(1).lower() == attr.lower() else am.group(0)
+        return _ATTR_TOKEN_RE.sub(repl, m.group(0))
+    return re.sub(r'<[a-zA-Z][^>]*>', strip_tag, html)
 
 
 def doc_title(html):
