@@ -30,8 +30,8 @@ UIは**デジタル庁デザインシステム（DADS）**に準拠し、絵文�
   - `comment-layer.html` … CSS・マークアップ・スクリプトを1つにまとめたドロップイン・ブロック
 - `scripts/` — 実行スクリプト
   - `add_comment_layer.py` … 資料への追加／更新／除去／合流／AI完了の書き戻し
-  - `verify.mjs` … ヘッドレスChromeでの動作確認（161項目）
-  - `verify_cli.py` … `add_comment_layer.py` 側の動作確認（45項目・Chrome不要）
+  - `verify.mjs` … ヘッドレスChromeでの動作確認
+  - `verify_cli.py` … `add_comment_layer.py` 側の動作確認（Chrome不要）
   - `cdp.mjs` … `verify.mjs` が使うChrome操作ドライバ（依存ゼロ）
 
 ## 最短の使い方
@@ -78,9 +78,9 @@ python3 scripts/add_comment_layer.py ../../サンプル/demo-要件レビュー_
 rm -f ../../サンプル/*.bak
 
 # 3) 検証（v2.14.0 から3本。ブラウザ側2本＋CLI側1本）
-node    scripts/verify.mjs    ../../サンプル/demo-要件レビュー_commented.html  # 161項目・60〜90秒
-node    scripts/verify.mjs    ../../サンプル/楽天サンプル_commented.html       # 161項目・60〜90秒
-python3 scripts/verify_cli.py ../../サンプル/demo-要件レビュー_確認用.html     #  45項目・数秒
+node    scripts/verify.mjs    ../../サンプル/demo-要件レビュー_commented.html  # 60〜90秒
+node    scripts/verify.mjs    ../../サンプル/楽天サンプル_commented.html       # 60〜90秒
+python3 scripts/verify_cli.py ../../サンプル/demo-要件レビュー_確認用.html     # 数秒
 ```
 
 **★資料の割り当てを間違えないこと。**
@@ -99,8 +99,11 @@ python3 scripts/verify_cli.py ../../サンプル/demo-要件レビュー_確認�
 - ページ遷移は `b.goto()` ではなく `verify.mjs` の `goto()` ラッパーを使う
   （レイヤーの起動を待たずに評価すると `host` が null のまま踏む）。
 - **ページを開き直したら `PAGE_HELPERS` を入れ直す**（`window.__vt` は遷移で消える）。
-- 楽天サンプルで初回が `createTreeWalker … not of type 'Node'` で落ちることがある。
-  **タイミング依存なので、1回通っただけで「消えた」扱いにしない。**
+- ★**「1回だけ落ちて再実行で通る」は v2.14.1 で原因を特定して直した。**
+  書き出したファイルに `data-cl-host` が焼き込まれており、起動前から印だけが在るせいで
+  起動待ちが素通りしていた。症状は当たりどころ次第で `createTreeWalker … not of type 'Node'`
+  （host が null）と `parentNode`（pinBox が null）の2つに割れる。**また出たら、まず
+  「起動待ちが素通りしていないか」を疑う**（詳細は `CHANGELOG.md` の v2.14.1）。
 - 変えた理由は `CHANGELOG.md` に、踏んだ穴は `SKILL.md`「落とし穴」に必ず残す。
 
 ### どこに何を書くか（★同じ話を2箇所に書かない）
@@ -116,6 +119,14 @@ python3 scripts/verify_cli.py ../../サンプル/demo-要件レビュー_確認�
 `CHANGELOG` に「いまの挙動」を書くと、次にそこを触ったとき2箇所直すことになる
 （v2.14.0 で「検算の限界」を3箇所に書いてしまった。次に触るときに揃えること）。
 
+**項目数のような「いまの挙動ではない数字」も、このルールの対象。** 検証の項目数は
+`CHANGELOG`（その版で何項目だったか＝履歴）にだけ置き、`SKILL.md` / `README.md` では
+「全項目 passed になること」で見る。そうしないと1項目足すたびに4ファイル直すことになる。
+
+**`SKILL.md` のフロントマターの `description` は、機能の説明を足す場所ではない。**
+スキルがいつ呼ばれるかを決める設定なので、機能追加のたびに説明を継ぎ足すと
+そのうち読まれない長さになる（v2.14 の時点で527文字）。**次に足すのはトリガー語だけ**にする。
+
 ### 今後の候補（未着手）
 
 - **ピンを「アンカー要素からの相対」で持つ。** v2.13 の比率（`yr`）で誤差は
@@ -128,7 +139,7 @@ python3 scripts/verify_cli.py ../../サンプル/demo-要件レビュー_確認�
   手間が減るだけ。優先度は低い。
 - **一覧の絞り込み**（「必須だけ表示」など）。足すなら「件数は全件のまま出す」
   「開き直す取っ手が必ず残る」を守れる形でのみ（`SKILL.md`「落とし穴」参照）。
-- **検証の分割。** 161項目で1本60〜90秒。分けるなら「レイヤー本体の検査」と
+- **検証の分割。** `verify.mjs` は1本60〜90秒。分けるなら「レイヤー本体の検査」と
   「資料の性質に依存する検査」で切るのが素直（後者だけ2本の資料で回す）。いまはまだ必要ない。
 - **`--repair`（壊れた `comment-store` の救出）。** v2.14 で書き戻し口を `--apply-state` に
   絞った時点でAIがJSONを触らなくなり、壊れる経路が実質なくなったので入れていない。

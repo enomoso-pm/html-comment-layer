@@ -15,7 +15,13 @@ let pass = 0, fail = 0;
 const goto = async (url) => {
   await b.goto(url);
   for (let i = 0; i < 80; i++) {
-    if (await b.evalJS(`return !!(window.__commentLayer && document.querySelector('[data-cl-host]'));`)) return;
+    // ★起動の合図に [data-cl-host] を使わない。v2.14.0 までの書き出しはこの印を
+    //   ファイルに焼き込んでいたので、保存済みファイルでは「起動前から印だけある」。
+    //   そこで素通りすると、host も pinBox も null のまま評価してしまう
+    //   （host null → _streamTextNodes() が createTreeWalker で落ちる／
+    //     pinBox null → exportHTML() が parentNode で落ちる）。
+    //   #cl-pins は書き出し前に必ず外されるので、これがあるのは起動した証拠になる。
+    if (await b.evalJS(`return !!(window.__commentLayer && document.getElementById('cl-pins'));`)) return;
     await b.wait(100);
   }
   console.log('  （レイヤーの起動を待てませんでした: ' + url + '）');

@@ -1,5 +1,5 @@
 <!-- ===================================================================
-     COMMENT-LAYER v2.14.0 : START
+     COMMENT-LAYER v2.14.1 : START
      HTML資料にレビューコメント機能を後付けするドロップイン・ブロック。
      この START 〜 END までを丸ごと差し替えればバージョンアップできる。
      資料側に必要な条件：
@@ -487,6 +487,13 @@ html.cl-guide-open #cl-guide{ display:flex; }
 #cl-guide .cl-g-flow{ margin:0; padding-left:24px; font-size:14px; line-height:1.9; list-style:decimal; }
 #cl-guide .cl-g-flow li{ margin-bottom:10px; list-style:decimal; }
 #cl-guide .cl-g-mono{ font-family:var(--cl-mono); font-size:13px; font-weight:700; color:var(--cl-ink); }
+/* 「このページは誰向けか」の帯。★本文と同じ見た目にしない。
+   範囲表示は本文を読む前に「飛ばすかどうか」を決めるためのものなので、
+   飛ばし読みで目に入らないと役に立たない（リード文に混ぜると本文と区別が付かない） */
+#cl-guide .cl-g-scope{ display:flex; gap:8px; align-items:flex-start;
+  background:var(--cl-soft); border:1px solid var(--cl-border); border-radius:8px;
+  padding:10px 14px; margin:0 0 14px; font-size:13px; line-height:1.8; color:var(--cl-gray-700); }
+#cl-guide .cl-g-scope .cl-i{ color:var(--cl-gray-536); margin-top:3px; }
 /* コマンドの行。★横スクロールにはしない。パネル幅（720px）に収まらない長さなので、
    nowrap だと右端で切れたまま止まり、見えている範囲だけを写し間違える。pre-wrap なら
    折り返して全部見え、クリックで丸ごと選べる（改行は入らないのでコピーは1行のまま） */
@@ -1154,8 +1161,11 @@ html.cl-guide-open #cl-guide{ display:flex; }
       </g>
     </svg>
     <div class="cl-g-h">AIに直させて、完了を戻す</div>
-    <p class="cl-g-lead"><strong>このページは、資料を作った人（レビューを集める側）の手順です。</strong>
-    コメントを書いて返す方は、前のページまでで完結します。</p>
+    <div class="cl-g-scope">
+      <svg class="cl-i" data-s="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 17h2v-6h-2v6Zm1-8c.283 0 .52-.096.712-.288A.968.968 0 0 0 13 8a.968.968 0 0 0-.288-.712A.968.968 0 0 0 12 7a.968.968 0 0 0-.712.288A.968.968 0 0 0 11 8c0 .283.096.52.288.712.191.192.429.288.712.288Zm0 13a9.7 9.7 0 0 1-3.9-.79 10.1 10.1 0 0 1-5.31-5.31A9.7 9.7 0 0 1 2 12c0-1.39.26-2.69.79-3.9a10.1 10.1 0 0 1 5.31-5.31A9.7 9.7 0 0 1 12 2c1.39 0 2.69.26 3.9.79a10.1 10.1 0 0 1 5.31 5.31c.53 1.21.79 2.51.79 3.9s-.26 2.69-.79 3.9a10.1 10.1 0 0 1-5.31 5.31c-1.21.53-2.51.79-3.9.79Z"/></svg>
+      <div><strong>このページは、資料を作った人（レビューを集める側）の手順です。</strong>
+        コメントを書いて返す方は、前のページまでで完結します。</div>
+    </div>
     <p class="cl-g-lead">AIに貼って直させても、<strong>資料の側の指摘は「未完了」のまま</strong>です。
     直したことを資料に書き戻すところまでで1往復。<strong>この4手をやらないと、完了の印が一度も戻ってきません。</strong></p>
     <ol class="cl-g-flow">
@@ -1272,7 +1282,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
 (function () {
   'use strict';
   if (window.__commentLayer) return;
-  var VERSION = '2.14.0';
+  var VERSION = '2.14.1';
 
   var comments = [], users = [], pinMode = false, draft = null, dirty = false, activeId = null, booted = false;
   // 版の系譜（comment-meta）。ファイル往復は本質的に分岐するので、分岐を防ぐのではなく
@@ -3791,6 +3801,13 @@ html.cl-guide-open #cl-guide{ display:flex; }
     var pinParent = pinBox.parentNode, pinNext = pinBox.nextSibling;
     if (pinParent) pinParent.removeChild(pinBox);
     var hostPos = host.getAttribute('style');
+    // ★data-cl-host も実行時に付けた印なので、書き出す前に外す。
+    //   焼き込まれると「レイヤーがまだ起動していないのに host の印だけある」ファイルになり、
+    //   起動待ちを [data-cl-host] の有無で判定している側（verify.mjs の goto ラッパー）が
+    //   素通りする。その隙間で exportHTML() を呼ぶと pinBox が null で落ち、
+    //   _streamTextNodes() を呼ぶと host が null で落ちる——「1回だけ落ちて再実行で通る」
+    //   の正体はこれ。起動時に付け直されるので、外して困るものは何も無い
+    host.removeAttribute('data-cl-host');
 
     // 閉じscriptタグや、差し込みブロックの境界マーカーそのものをコメントに書かれても、
     // ファイル構造と更新スクリプトの境界検出が壊れないようにエスケープする
@@ -3826,6 +3843,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
     $('#cl-list').innerHTML = listHTML;
     if (pinParent) pinParent.insertBefore(pinBox, pinNext);
     if (hostPos != null) host.setAttribute('style', hostPos);
+    host.setAttribute('data-cl-host', '');
 
     var name = decodeURIComponent((location.pathname.split('/').pop() || '')) || (document.title || 'document');
     name = name.replace(/\.html?$/i, '')
@@ -4024,4 +4042,4 @@ html.cl-guide-open #cl-guide{ display:flex; }
   };
 })();
 </script>
-<!-- ===== COMMENT-LAYER v2.14.0 : END ===== -->
+<!-- ===== COMMENT-LAYER v2.14.1 : END ===== -->
