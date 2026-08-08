@@ -2190,6 +2190,305 @@ print(json.dumps({
   const errs7 = b.events.filter(e => e.method === 'Runtime.exceptionThrown');
   ok('ラッパー無し資料のテスト中もJSエラーが出ない', errs7.length === 0, errs7.map(e => e.params.exceptionDetails.text).join(' / '));
 
+  /* ========================================================================
+     46. v2.14: AIによる完了の書き戻しと、その検算 / 版の系譜
+     ここで守りたいのは1つだけ——「AIが完了と言った」を無条件で信じないこと。
+     検算は resolvedBy が AI のときだけ働き、人が完了にしたものには出ない。
+     ★条件は「ハイライトが在るか」ではなく「引用が消えたことを確認できたか」で書く。
+       前者だと ambiguous（同じ文が複数）と pin型 がそのまま素通りする。
+     ======================================================================== */
+  await goto(URL0);
+  // ページを開き直すと window.__vt は消える。ヘルパは毎回入れ直す
+  await b.evalJS(PAGE_HELPERS + 'return 1;');
+  b.events.length = 0;
+
+  const f46 = JSON.parse(await b.evalJS(`
+    __commentLayer.setSidebar(true);
+    // 既存のコメントは消してから作る（サンプルによって初期状態が違うため）
+    __commentLayer.comments.slice().forEach(c => __commentLayer.commit({type:'delete', id:c.id}));
+    const used = [];
+    const qA = __vt.uniq(12, used); used.push(qA);   // AI完了・引用が残る → 未検算
+    const qB = __vt.uniq(12, used); used.push(qB);   // 人が完了      → 検算の対象外
+    const qD = __vt.uniq(12, used); used.push(qD);   // AI完了・その場で書き換え → 検算通過
+    const idA = __vt.mk(qA, 'AIが直したと言っている指摘');
+    const idB = __vt.mk(qB, '人が完了にした指摘');
+    const idD = __vt.mk(qD, 'AIが本文を書き換えた指摘');
+    // ピンは commit で直接足す（座標を選ぶUIを経由しなくてよい）
+    const idC = 'pin-vt46';
+    const now = new Date().toISOString();
+    __commentLayer.commit({type:'add', comment:{id:idC, type:'pin', text:'図の余白がずれています',
+      author:'田中（企画）', color:'#c74700', date:now, updatedAt:now, resolved:false,
+      x:120, y:160, xr:0.2, yr:0.1, hw:Math.round(__commentLayer._hostWidth())}});
+    // AI完了は --apply-state と同じ形で作る（resolvedBy に "AI" が入る）
+    [idA, idC, idD].forEach(id => __commentLayer.commit({type:'resolve', id, by:'AI'}));
+    __commentLayer.commit({type:'resolve', id: idB, by:'山本（技術リード）'});
+    // D だけ、AIが本文をその場で書き換えた状況にする（span は残り、中身だけ変わる）
+    const hd = document.querySelector('.comment-highlight[data-id="' + idD + '"]');
+    if (hd) hd.textContent = '（この箇所はAIが書き換えました）';
+    // E: 要素をまたぐ引用。★これが無いと検算のいちばん普通の経路を1件も通らない。
+    //    quote は savedRange.toString()＝要素の隙間の空白を含み、span の連結には含まれない
+    //    （wrapRange が空白だけのノードを弾く）。左右で空白の扱いを揃えないと、
+    //    見出し＋次の行・箇条書き2項目・段落2つ が全部「変わった」と誤判定されて素通りする
+    const els = [...document.querySelector('[data-cl-host]')
+      .querySelectorAll('h1,h2,h3,p,li,td,dd,dt')]
+      .filter(e => !e.closest('#cl-sidebar,#cl-dock,#cl-guide,#cl-guide-fab,#cl-toast')
+                && e.firstChild && e.firstChild.nodeType === 3
+                && e.firstChild.textContent.trim().length > 8
+                && !e.querySelector('.comment-highlight'));
+    let idE = null, eSpans = 0;
+    for (let i = 0; i + 1 < els.length && !idE; i++) {
+      const r = document.createRange();
+      r.setStart(els[i].firstChild, Math.max(0, els[i].firstChild.textContent.length - 6));
+      r.setEnd(els[i + 1].firstChild, 6);
+      if (!r.toString().trim()) continue;
+      __commentLayer._setRange(r); __commentLayer.startTextComment();
+      document.getElementById('cl-draft-text').value = '要素をまたぐ引用への指摘';
+      __commentLayer.saveDraft();
+      const c = __commentLayer.comments[__commentLayer.comments.length - 1];
+      eSpans = document.querySelectorAll('.comment-highlight[data-id="' + c.id + '"]').length;
+      if (eSpans >= 2) { idE = c.id; __commentLayer.commit({type:'resolve', id: idE, by:'AI'}); }
+      else __commentLayer.commit({type:'delete', id: c.id});
+    }
+    __commentLayer.render();
+    return JSON.stringify({idA, idB, idC, idD, idE, eSpans, qA});
+  `));
+
+  const r46 = JSON.parse(await b.evalJS(`
+    const md = __commentLayer.buildReviewMarkdown();
+    const ids = __commentLayer.comments.map(c => c.id);
+    const blocks = md.split(/^## 指摘 /m).slice(1);
+    const stateOf = (id) => {
+      const blk = blocks.filter(x => x.indexOf('ID: ' + id) >= 0)[0] || '';
+      const m = blk.match(/^状態: .*$/m);
+      return m ? m[0] : '';
+    };
+    return JSON.stringify({
+      全件にIDが出る: ids.every(id => md.indexOf('\\nID: ' + id + '\\n') >= 0),
+      IDと件数が1対1: (md.match(/^ID: /gm) || []).length === ids.length,
+      IDは状態の直前: blocks.every(x => /^ID: [^\\n]+\\n状態: /m.test(x)),
+      A_未検算の文言: stateOf('${f46.idA}'),
+      B_人の完了: stateOf('${f46.idB}'),
+      C_ピンの文言: stateOf('${f46.idC}'),
+      D_書き換え済み: stateOf('${f46.idD}'),
+      手順節がある: md.indexOf('## 修正後の手順（必須）') >= 0,
+      形式例がある: md.indexOf('"updates"') >= 0 && md.indexOf('"resolved": true') >= 0,
+      禁止事項が2つ: (md.split('### 禁止事項')[1] || '').split('\\n').filter(l => l.startsWith('- ')).length === 2,
+      直接編集の手順が無い: md.indexOf('u003c') < 0 && md.indexOf('COMMENT\\\\u002d') < 0,
+      HTML断片が無い: !/<[a-zA-Z][^>]*>/.test(md)
+    });
+  `));
+  ok('Markdown: 全指摘に ID が出て、コメントと1対1で対応する',
+     r46.全件にIDが出る && r46.IDと件数が1対1, JSON.stringify(r46));
+  ok('Markdown: ID は必ず 状態 の直前に出る（完了済みにも出る）', r46.IDは状態の直前, JSON.stringify(r46));
+  ok('Markdown: AI完了で引用が残っていると「修正不要」を出さない',
+     r46.A_未検算の文言.indexOf('修正不要') < 0 && r46.A_未検算の文言.indexOf('人の確認待ち') >= 0,
+     r46.A_未検算の文言);
+  // ★「引用が残っている」から「直っていない」へ推論を跨がない。跨ぐと、引用文を変えない
+  //   修正（注記の追加など）とピンで、AI側から解除できないまま毎周直され続ける
+  ok('Markdown: 未検算をAIに再修正させない（確認は人の仕事）',
+     r46.A_未検算の文言.indexOf('再修正しないでください') >= 0 &&
+     r46.A_未検算の文言.indexOf('本文を修正してください') < 0, r46.A_未検算の文言);
+  ok('Markdown: 人が完了にしたものは従来どおり「修正不要」',
+     r46.B_人の完了.indexOf('修正不要') >= 0, r46.B_人の完了);
+  ok('Markdown: ピンのAI完了は「照合できない」と書く',
+     r46.C_ピンの文言.indexOf('人の確認待ち') >= 0 && r46.C_ピンの文言.indexOf('確認できません') >= 0,
+     r46.C_ピンの文言);
+  ok('Markdown: AIが本文を書き換えた指摘は検算を通過して「修正不要」',
+     r46.D_書き換え済み.indexOf('修正不要') >= 0, r46.D_書き換え済み);
+  ok('Markdown: 書き戻し手順と review-state.json の形式が載る',
+     r46.手順節がある && r46.形式例がある, JSON.stringify(r46));
+  ok('Markdown: 禁止事項は2つで、埋め込みJSONを直接編集させる手順が無い',
+     r46.禁止事項が2つ && r46.直接編集の手順が無い, JSON.stringify(r46));
+  ok('Markdown: 手順を足してもHTML断片は混ざらない', r46.HTML断片が無い);
+
+  const u46 = JSON.parse(await b.evalJS(`
+    const card = id => document.getElementById('cl-item-' + id);
+    const warnOf = id => { const e = card(id).querySelector('.cl-unverified'); return e ? e.textContent.replace(/\\s+/g,' ').trim() : null; };
+    const badge = document.getElementById('cl-unver');
+    return JSON.stringify({
+      未検算: __commentLayer.unverified,
+      A警告: warnOf('${f46.idA}'), B警告: warnOf('${f46.idB}'),
+      C警告: warnOf('${f46.idC}'), D警告: warnOf('${f46.idD}'),
+      E警告: ${f46.idE ? "warnOf('" + f46.idE + "')" : 'null'},
+      期待件数: ${f46.idE ? 3 : 2},
+      完了に従来警告が出ていない: document.querySelectorAll('.cl-item.cl-done .cl-orphan:not(.cl-unverified)').length === 0,
+      バッジ: badge.hidden ? null : badge.textContent.trim(),
+      確認済みボタン数: document.querySelectorAll('[data-cl="ack"]').length
+    });
+  `));
+  ok('カード: AI完了で引用が残っていると未検算の警告が出る',
+     !!u46.A警告 && u46.A警告.indexOf('変わっていません') >= 0, u46.A警告);
+  ok('カード: 人が完了にしたものには警告を出さない', u46.B警告 === null, u46.B警告);
+  ok('カード: ピンのAI完了も未検算として拾う',
+     !!u46.C警告 && u46.C警告.indexOf('照合ができません') >= 0, u46.C警告);
+  ok('カード: AIが本文を書き換えたものは警告を出さない', u46.D警告 === null, u46.D警告);
+  ok('カード: 完了済みに「対応済みの可能性」を重ねて出さない', u46.完了に従来警告が出ていない);
+  ok('バッジ: 未検算の件数だけを数える（AI完了の件数ではない）',
+     u46.未検算.length === u46.期待件数 && new RegExp(u46.期待件数 + ' 件').test(u46.バッジ || ''),
+     JSON.stringify(u46));
+  // ★要素をまたぐ引用。本文に手を付けていないので必ず未検算に残らなければならない。
+  //   ここが通らないなら、見出し＋次の行のような普通の選択が全部素通りしている
+  ok('検算: 要素をまたぐ引用（複数span）でも、本文が無変更なら未検算として拾う',
+     f46.idE ? (u46.E警告 && u46.E警告.indexOf('変わっていません') >= 0) : false,
+     f46.idE ? String(u46.E警告) : '要素をまたぐ引用を作れる資料ではありません（span数=' + f46.eSpans + '）');
+  ok('バッジ: 未検算カードには必ず「確認済み」がある',
+     u46.確認済みボタン数 === u46.期待件数, u46.確認済みボタン数);
+
+  const k46 = JSON.parse(await b.evalJS(`
+    __commentLayer.setHideDone(true);
+    const badge = document.getElementById('cl-unver');
+    const 畳んでも見える = !badge.hidden;
+    const 一覧から消えた = !document.getElementById('cl-item-${f46.idA}');
+    badge.click();
+    return JSON.stringify({畳んでも見える, 一覧から消えた,
+      押すと開き直せる: !!document.getElementById('cl-item-${f46.idA}'),
+      選ばれた: document.getElementById('cl-item-${f46.idA}').classList.contains('cl-active')});
+  `));
+  ok('バッジ: 完了を畳んでいても見え、押すと畳みが解けて該当カードへ飛ぶ',
+     k46.畳んでも見える && k46.一覧から消えた && k46.押すと開き直せる && k46.選ばれた, JSON.stringify(k46));
+
+  const a46 = JSON.parse(await b.evalJS(`
+    const before = __commentLayer.unverified.length;
+    document.querySelector('#cl-item-${f46.idA} [data-cl="ack"]').click();
+    const c = __commentLayer.comments.filter(x => x.id === '${f46.idA}')[0];
+    const ev = new Event('beforeunload', {cancelable:true}); window.dispatchEvent(ev);
+    const badge = document.getElementById('cl-unver');
+    return JSON.stringify({before, after: __commentLayer.unverified.length,
+      完了者が自分になった: c.resolvedBy === __commentLayer.users.filter(u=>u.id===__commentLayer.activeUserId)[0].name,
+      まだ完了のまま: c.resolved === true,
+      警告が消えた: !document.querySelector('#cl-item-${f46.idA} .cl-unverified'),
+      バッジ: badge.hidden ? null : badge.textContent.trim(),
+      未保存になった: ev.defaultPrevented});
+  `));
+  ok('確認済み: 押すと完了者が自分になり、完了は保たれる',
+     a46.完了者が自分になった && a46.まだ完了のまま, JSON.stringify(a46));
+  ok('確認済み: 警告が消えてバッジが1減り、未保存フラグが立つ',
+     a46.警告が消えた && a46.after === a46.before - 1 && a46.未保存になった, JSON.stringify(a46));
+
+  const m46 = JSON.parse(await b.evalJS(`
+    const meta0 = JSON.parse(JSON.stringify(__commentLayer.meta));
+    const k = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function(){};
+    __commentLayer.exportHTML();
+    const m1 = JSON.parse(JSON.stringify(__commentLayer.meta));
+    const badgeAtSave = __commentLayer.unverified.length;
+    // 残りも確認済みにしてから保存 → 焼かれる数が減っていること（キャッシュを使っていない証拠）
+    // ★1回押すと再描画でカードが作り直される。静的な NodeList を回すと2件目以降は
+    //   DOMから外れたボタンを押すことになり、委譲リスナに届かない
+    for (let i = 0; i < 20; i++) {
+      const btn = document.querySelector('[data-cl="ack"]');
+      if (!btn) break;
+      btn.click();
+    }
+    __commentLayer.exportHTML();
+    const m2 = JSON.parse(JSON.stringify(__commentLayer.meta));
+    HTMLAnchorElement.prototype.click = k;
+    return JSON.stringify({
+      revIdが変わる: m1.revId !== meta0.revId,
+      親が直前を指す: m1.parentRevId === meta0.revId,
+      連続保存が直列: m2.parentRevId === m1.revId,
+      genが増える: m2.gen === m1.gen + 1 && m1.gen === meta0.gen + 1,
+      docIdは不変: m1.docId === meta0.docId && m2.docId === meta0.docId,
+      保存時のunverifiedがバッジと一致: m1.unverified === badgeAtSave,
+      確認後の保存で減る: m2.unverified === 0,
+      unverifiedAtがある: !!m2.unverifiedAt
+    });
+  `));
+  ok('系譜: 保存のたびに revId が変わり、parentRevId が直前を指す',
+     m46.revIdが変わる && m46.親が直前を指す, JSON.stringify(m46));
+  ok('系譜: 同じタブで2回保存しても直列になる（分岐に見えない）', m46.連続保存が直列, JSON.stringify(m46));
+  ok('系譜: gen が増え、docId は変わらない', m46.genが増える && m46.docIdは不変, JSON.stringify(m46));
+  ok('系譜: 保存時の unverified が、そのときのバッジと一致する',
+     m46.保存時のunverifiedがバッジと一致, JSON.stringify(m46));
+  ok('系譜: 確認済みにしてから保存すると、減ったあとの数が焼かれる（キャッシュしていない）',
+     m46.確認後の保存で減る && m46.unverifiedAtがある, JSON.stringify(m46));
+
+  const g46 = JSON.parse(await b.evalJS(`
+    const before = __commentLayer.meta.gen;
+    const k = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function(){};
+    for (let i = 0; i < 205; i++) __commentLayer.exportHTML();
+    HTMLAnchorElement.prototype.click = k;
+    const m = __commentLayer.meta;
+    return JSON.stringify({lineage: m.lineage.length, genの増分: m.gen - before,
+      先頭が捨てられた: m.lineage[0].op !== 'inject'});
+  `));
+  ok('系譜: lineage は 200 件で打ち切られ、それでも gen は正しい',
+     g46.lineage === 200 && g46.genの増分 === 205 && g46.先頭が捨てられた, JSON.stringify(g46));
+
+  const v46 = JSON.parse(await b.evalJS(`
+    const line = document.getElementById('cl-rev-line');
+    const list = document.getElementById('cl-rev-list');
+    const nameBtn = document.getElementById('cl-rev-name');
+    const 畳んである = list.hidden;
+    line.click();
+    const 開ける = !list.hidden && list.children.length > 0;
+    // 資料本体に版情報が出ていないこと（配布物に出てはいけない）
+    const host = document.querySelector('[data-cl-host]').cloneNode(true);
+    host.querySelectorAll('#cl-sidebar,#cl-dock,#cl-guide,#cl-guide-fab,#cl-toast,#cl-pins,#cl-rev,#cl-unver').forEach(e => e.remove());
+    const t = host.textContent;
+    // ★ 'rev-' のような一般的な断片で探すと、資料側の文章に偶然含まれて誤検知する
+    //   （楽天サンプルで実際に踏んだ）。この版だけが持つ実際のIDと、UI固有の文言で見る
+    const m = __commentLayer.meta;
+    const lin = m.lineage || [];
+    const prev = lin.filter(e => e.revId === m.parentRevId)[0];
+    return JSON.stringify({版情報: line.textContent, 畳んである, 開ける,
+      親のop: prev ? prev.op : null,
+      名前の誘導: nameBtn.hidden ? null : nameBtn.textContent,
+      本文に漏れている: ['この版:', m.docId, m.revId, m.parentRevId]
+        .filter(k => k && t.indexOf(k) >= 0)});
+  `));
+  ok('版情報: コメントUI側に1行だけ出て、既定は畳んである',
+     /^この版: /.test(v46.版情報) && v46.畳んである, JSON.stringify(v46));
+  // ★CLI が作った版を「名前未設定の人が保存」と書かない。この行はいちばん読まれる
+  ok('版情報: CLI が作った版は「コマンドで…」と書く（人が保存したことにしない）',
+     v46.版情報.indexOf('初版') >= 0 || !/名前未設定の人 の版から派生/.test(v46.版情報) ||
+     v46.親のop === 'save', JSON.stringify(v46));
+  ok('版情報: クリックで系譜を開ける（開く取っ手が常にある）', v46.開ける, JSON.stringify(v46));
+  ok('版情報: 資料本体には一切出さない', v46.本文に漏れている.length === 0, JSON.stringify(v46));
+
+  const n46 = JSON.parse(await b.evalJS(`
+    const nameBtn = document.getElementById('cl-rev-name');
+    const u = __commentLayer.users.filter(x => x.id === __commentLayer.activeUserId)[0];
+    __commentLayer.commit({type:'user-update', id: u.id, field:'name', value:'レビュアー1'});
+    __commentLayer.render();
+    const 既定なら誘導が出る = !nameBtn.hidden;
+    __commentLayer.commit({type:'user-update', id: u.id, field:'name', value:'山本（技術リード）'});
+    __commentLayer.render();
+    return JSON.stringify({既定なら誘導が出る, 名前を入れると消える: nameBtn.hidden});
+  `));
+  ok('版情報: 名前が既定のままなら設定への誘導が出て、入れると消える',
+     n46.既定なら誘導が出る && n46.名前を入れると消える, JSON.stringify(n46));
+
+  const t46 = JSON.parse(await b.evalJS(`
+    const k = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function(){};
+    __commentLayer.exportHTML();
+    HTMLAnchorElement.prototype.click = k;
+    const toast = document.getElementById('cl-toast').textContent;
+    return JSON.stringify({送り返しの念押し: toast.indexOf('あなたのパソコンの中だけ') >= 0,
+      名前の話が混ざっていない: toast.indexOf('名前') < 0});
+  `));
+  ok('保存トーストは従来どおり（送り返しの念押しを名前の話で薄めない）',
+     t46.送り返しの念押し && t46.名前の話が混ざっていない, JSON.stringify(t46));
+
+  const kb46 = JSON.parse(await b.evalJS(`
+    const cards = [...document.querySelectorAll('.cl-item:not(.cl-draft)')];
+    return JSON.stringify({
+      全カードがtabindex0: cards.every(e => e.getAttribute('tabindex') === '0'),
+      確認済みはボタン: [...document.querySelectorAll('[data-cl="ack"]')].every(e => e.tagName === 'BUTTON'),
+      本文へ飛ぶ主導線より後ろ: [...document.querySelectorAll('.cl-item')].every(card => {
+        const ack = card.querySelector('[data-cl="ack"]');
+        if (!ack) return true;
+        const body = card.querySelector('.cl-body');
+        return !!(body && (body.compareDocumentPosition(ack) & Node.DOCUMENT_POSITION_FOLLOWING));
+      })
+    });
+  `));
+  ok('キーボード: 確認済みは button で、カード内では本文より後ろに置かれている',
+     kb46.全カードがtabindex0 && kb46.確認済みはボタン && kb46.本文へ飛ぶ主導線より後ろ, JSON.stringify(kb46));
+
+  const errs46 = b.events.filter(e => e.method === 'Runtime.exceptionThrown');
+  ok('v2.14 のテスト中もJSエラーが出ない', errs46.length === 0,
+     errs46.map(e => e.params.exceptionDetails.text).join(' / '));
+
 } catch (e) {
   fail++; console.log('❌ 実行エラー: ' + e.message);
 } finally {

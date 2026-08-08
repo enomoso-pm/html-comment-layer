@@ -11,10 +11,13 @@
 (comment-store / user-master) を引き継いだままエンジンだけを差し替える。
 """
 import argparse
+import datetime
 import json
 import pathlib
+import random
 import re
 import shutil
+import string
 import sys
 
 ASSET = pathlib.Path(__file__).resolve().parent.parent / "assets" / "comment-layer.html"
@@ -85,6 +88,157 @@ def load_store(html, store_id):
     return v if isinstance(v, list) else None
 
 
+# ---------------------------------------------------------------------------
+# 版の系譜（comment-meta）
+#
+# ブラウザ側と同じ構造を Python でも組み立てる。docId は資料の系統、revId はファイル1個。
+# ★unverified / unverifiedAt を書くのはブラウザだけ。こちらは照合（引用が本文から
+#   消えたか）ができないので、触ったら必ず消す。古い数字を残すと --check が
+#   --apply-state 適用前の数を報告してしまう。
+# ---------------------------------------------------------------------------
+
+LINEAGE_MAX = 200
+
+
+def now_iso():
+    return (datetime.datetime.now(datetime.timezone.utc)
+            .isoformat(timespec="milliseconds").replace("+00:00", "Z"))
+
+
+def load_meta(html):
+    """comment-meta を dict で返す。無い・壊れているなら空 dict。"""
+    raw = extract_store(html, "comment-meta")
+    if not raw:
+        return {}
+    try:
+        v = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return v if isinstance(v, dict) else {}
+
+
+def new_id(prefix):
+    return "%s-%s" % (prefix, "".join(random.choice(string.ascii_lowercase + string.digits)
+                                      for _ in range(8)))
+
+
+def bump_meta(meta, op, title=None):
+    """版を1つ進める。meta が空なら新規注入として組み立てる。
+
+    ブラウザの exportHTML() と同じ手順（parentRevId ← 旧revId、revId 再生成、gen +1、
+    lineage 追記）。by はCLIからは分からないので空にする（ブラウザ側が入れる）。
+    """
+    meta = dict(meta or {})
+    at = now_iso()
+    lineage = meta.get("lineage")
+    if not isinstance(lineage, list):
+        lineage = []
+    if not meta.get("docId"):
+        meta = {"schema": 1, "docId": new_id("doc"), "revId": None,
+                "parentRevId": None, "gen": 0, "lineage": []}
+        lineage = []
+        op = "inject"
+    meta["schema"] = 1
+    meta["parentRevId"] = meta.get("revId") or None
+    meta["revId"] = new_id("rev")
+    meta["gen"] = (meta.get("gen") if isinstance(meta.get("gen"), int) else len(lineage)) + 1
+    if title:
+        meta["title"] = title
+    meta["lineage"] = (lineage + [{"revId": meta["revId"], "at": at, "by": "", "op": op}])[-LINEAGE_MAX:]
+    # ★照合できないので、ブラウザが書いた件数は必ず捨てる（古い数字で嘘をつかせない）
+    meta.pop("unverified", None)
+    meta.pop("unverifiedAt", None)
+    return meta
+
+
+def merge_lineage(a, b):
+    """2本の系譜を revId で和集合にし、時刻順に並べる。"""
+    out, seen = [], set()
+    for e in list(a or []) + list(b or []):
+        rid = (e or {}).get("revId")
+        if not rid or rid in seen:
+            continue
+        seen.add(rid)
+        out.append(e)
+    out.sort(key=lambda e: str((e or {}).get("at") or ""))
+    return out[-LINEAGE_MAX:]
+
+
+def merge_meta(base, other):
+    """--merge 用。docId は主ファイル側を維持し、lineage だけ合流させる。"""
+    m = dict(base or {})
+    if not m.get("docId") and (other or {}).get("docId"):
+        # 主ファイルにまだレイヤーが無い場合だけ、相手の系統に乗る
+        m["docId"] = other["docId"]
+    m["lineage"] = merge_lineage((base or {}).get("lineage"), (other or {}).get("lineage"))
+    m["gen"] = max(_gen(base), _gen(other))
+    return m
+
+
+def _gen(m):
+    g = (m or {}).get("gen")
+    return g if isinstance(g, int) and g > 0 else len(((m or {}).get("lineage") or []))
+
+
+def rev_set(m):
+    """そのファイルが辿ってきた版のID全部（自分自身を含む）。"""
+    s = set()
+    for e in ((m or {}).get("lineage") or []):
+        rid = (e or {}).get("revId")
+        if rid:
+            s.add(rid)
+    if (m or {}).get("revId"):
+        s.add(m["revId"])
+    return s
+
+
+def guard_different_doc(base, other, base_name, other_name, force, out=sys.stdout):
+    """別の資料同士のマージだけは作業前に止める。★中断してよいのはここだけ。"""
+    bd, od = (base or {}).get("docId"), (other or {}).get("docId")
+    if not (bd and od and bd != od):
+        return
+    print("  [警告] 別の資料をマージしようとしています（docIdが一致しません）。", file=out)
+    print("         %s: %s" % (base_name, bd), file=out)
+    print("         %s: %s" % (other_name, od), file=out)
+    if not force:
+        # ★「続行しますか」と聞いてはいけない。答える手段が無い
+        sys.exit("         意図した操作なら --force を付けて再実行してください。")
+    print("         --force が指定されているので続行します。", file=out)
+
+
+def report_lineage(base, other, base_name, other_name, out=sys.stdout):
+    """分岐しているのか、親子なのかを知らせる。★処理は止めない。"""
+    bd, od = (base or {}).get("docId"), (other or {}).get("docId")
+    brs, ors = rev_set(base), rev_set(other)
+    brev, orev = (base or {}).get("revId"), (other or {}).get("revId")
+    # 親子関係。分岐していないのでマージする必要が無い＝新しい方をそのまま使えばよい
+    if brev and brev in ors and brev != orev:
+        print("  [注意] %s は %s の祖先です。マージせず新しい方を使ってください。"
+              % (base_name, other_name), file=out)
+        return
+    if orev and orev in brs and brev != orev:
+        print("  [注意] %s は %s の祖先です。合流しても新しい指摘は増えません。"
+              % (other_name, base_name), file=out)
+        return
+    shared = brs & ors
+    if shared:
+        at = {}
+        for m in (base, other):
+            for e in ((m or {}).get("lineage") or []):
+                if (e or {}).get("revId") in shared:
+                    at[e["revId"]] = str(e.get("at") or "")
+        newest = sorted(shared, key=lambda r: at.get(r, ""))[-1]
+        print("         系譜  : 共通の版 %s から分岐した2本" % newest, file=out)
+    elif bd or od:
+        # lineage を 200 件で打ち切っているので原理的には起こりうる。落ちないことだけ担保する
+        print("         系譜  : 共通の版を特定できませんでした", file=out)
+
+
+def doc_title(html):
+    m = re.search(r"<title[^>]*>(.*?)</title\s*>", html, re.S | re.I)
+    return re.sub(r"\s+", " ", m.group(1)).strip() if m else ""
+
+
 def _mtime(o):
     """新しさの比較キー。updatedAt が無い旧データは date で比べる（ISO文字列は辞書順＝時系列）。"""
     return str((o or {}).get("updatedAt") or (o or {}).get("date") or "")
@@ -149,6 +303,151 @@ def merge_users(base, other):
     return out
 
 
+# ---------------------------------------------------------------------------
+# 状態の反映（--apply-state）
+#
+# AIが資料の本文を直したあと、「どの指摘に対応したか」を受け取って完了にする。
+# AIに書かせるのは id と真偽値だけ。返信もコメントも書かせない（本文を見れば分かるので、
+# AIの作文を9件並べると人間の議論が薄まる）。埋め込みJSONを直接編集させる経路も持たない
+# ——ファイル破壊の防止を、AIがプロンプトを守るかどうかに賭けないため。
+# ---------------------------------------------------------------------------
+
+def apply_state(block, path, out=sys.stdout):
+    """review-state.json の resolved を反映した block を返す。
+
+    ★既に完了している指摘には一切触れない（resolvedAt も上書きしない）。
+      この一点で冪等になる——同じパッチを2回流しても結果が変わらない。
+    """
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        sys.exit("%s のJSONが読めません: %s" % (path.name, e))
+    updates = data.get("updates") if isinstance(data, dict) else None
+    if not isinstance(updates, list):
+        sys.exit("%s に updates 配列がありません。" % path.name)
+
+    comments = load_store(block, "comment-store")
+    # ★None だけを見ていると到達しない。レイヤーが無いファイルでは block はアセット同梱の
+    #   空配列なので load_store は [] を返し、案内の代わりに「該当なし」の警告が
+    #   updates の件数ぶん並んだうえで、コメント0件のファイルを書き出してしまっていた
+    if not comments:
+        sys.exit("状態を反映する先のコメントがありません: %s\n"
+                 "  資料をAIが丸ごと作り直した場合は、--carry-from で旧レビューHTMLを指定してください。" % path.name)
+
+    index = {}
+    for c in comments:
+        cid = (c or {}).get("id")
+        if cid and cid not in index:
+            index[cid] = c
+
+    at = now_iso()
+    applied, warns, notes, saw_reply = 0, [], [], False
+    for u in updates:
+        if not isinstance(u, dict):
+            warns.append("updates に辞書でない要素があります（スキップ）")
+            continue
+        if "reply" in u:
+            saw_reply = True
+        cid = u.get("id")
+        c = index.get(cid)
+        # AIはIDを捏造することがある。ここで全体を落とさず、1件だけ飛ばして続ける
+        if c is None:
+            warns.append("id=%s に該当するコメントがありません（スキップ）" % cid)
+            continue
+        if u.get("resolved") is not True:
+            notes.append("id=%s は resolved が true ではありません（何もしません）" % cid)
+            continue
+        if c.get("resolved"):
+            notes.append("id=%s は既に完了です（変更しません）" % cid)
+            continue
+        c["resolved"] = True
+        c["resolvedBy"] = "AI"
+        c["resolvedAt"] = at
+        # ★updatedAt は動かさない。完了で並び順を変えないという既存の約束（commit の resolve と同じ）
+        applied += 1
+
+    skipped = len(updates) - applied
+    print("状態反映: %s の %d 件中 %d 件を反映（完了 %d 件・スキップ %d 件）"
+          % (path.name, len(updates), applied, applied, skipped), file=out)
+    if saw_reply:
+        warns.insert(0, "reply は受け付けません（無視しました）。返信は人が書くものです")
+    for w in warns:
+        print("   [警告] " + w, file=out)
+    for n in notes:
+        print("   [情報] " + n, file=out)
+    # ★照合はしない。--apply-state の時点ではブラウザが描画していないので、
+    #   反映したぶんは「全件が未検算」——推測ではなく状態の正確な記述
+    if applied:
+        print("   [注意] %d 件をAI完了にしました。いずれも未検算です。開いて確認してください"
+              % applied, file=out)
+    return replace_store(block, "comment-store", dump_store(comments))
+
+
+# ---------------------------------------------------------------------------
+# 検査（--check）
+#
+# ★これは診断コマンドなので、何があっても落ちてはいけない。いちばん壊れているファイルで
+#   使えないのでは意味が無い（load_store() は JSON が壊れていると sys.exit する）。
+#   壊れていること自体が最重要の所見なので、報告して終了コード0で戻る。
+# ---------------------------------------------------------------------------
+
+def report_check(block, out=sys.stdout):
+    m = re.search(r"COMMENT-LAYER v([0-9][0-9.]*)", block)
+    print("レイヤー: あり（v%s）" % (m.group(1) if m else "版不明"), file=out)
+
+    raw = extract_store(block, "comment-meta")
+    meta, meta_broken = {}, False
+    if raw:
+        try:
+            v = json.loads(raw)
+            meta = v if isinstance(v, dict) else {}
+        except json.JSONDecodeError:
+            meta_broken = True
+    if meta_broken:
+        print("系譜   : 読み取れません（comment-meta のJSONが壊れています）", file=out)
+    elif meta.get("docId"):
+        gen = meta.get("gen")
+        tail = "%s代目" % gen if isinstance(gen, int) else "代数不明"
+        if meta.get("parentRevId"):
+            tail += "・親 %s" % meta["parentRevId"]
+        else:
+            tail += "・初版"
+        print("系譜   : %s / %s（%s）" % (meta["docId"], meta.get("revId") or "rev不明", tail), file=out)
+    else:
+        print("系譜   : まだありません（開くか --in-place を通すと作られます）", file=out)
+
+    raw = extract_store(block, "comment-store")
+    try:
+        comments = json.loads(raw) if raw and raw.strip() else []
+        if not isinstance(comments, list):
+            raise ValueError
+    except (json.JSONDecodeError, ValueError):
+        print("コメント: 読み取れません（comment-store のJSONが壊れています）", file=out)
+        return
+    done = [c for c in comments if isinstance(c, dict) and c.get("resolved")]
+    print("コメント: %d 件（未対応 %d 件・完了 %d 件）"
+          % (len(comments), len(comments) - len(done), len(done)), file=out)
+    # ★未検算は comment-meta に書かれた値を読むだけ。照合（引用が本文から消えたか）は
+    #   描画後のDOMに依存するので Python では再現できない。2実装にすると必ずズレる。
+    #   Python 側の書き込み経路は unverified を消すので、ここが「不明」なのは正常。
+    #   ★「まだ開いていません」とは書かない。消したから空なのか、一度も開いていないのかは
+    #     区別が付かない。断定せず、次の行動だけ書く
+    if isinstance(meta.get("unverified"), int):
+        when = fmt_when(meta.get("unverifiedAt"))
+        print("未検算  : %d 件%s" % (meta["unverified"],
+              ("（%s にブラウザで開いた時点）" % when) if when else ""), file=out)
+    else:
+        print("未検算  : 不明（ブラウザで開いて保存すると分かります）", file=out)
+
+
+def fmt_when(iso):
+    try:
+        d = datetime.datetime.fromisoformat(str(iso).replace("Z", "+00:00")).astimezone()
+        return d.strftime("%Y-%m-%d %H:%M")
+    except (TypeError, ValueError):
+        return ""
+
+
 def warn_host(html, out):
     """本文が素直にスクロールできない書き方を検出して知らせる。"""
     problems = []
@@ -179,10 +478,19 @@ def main():
                     help="旧レビュー済みHTMLからコメントとユーザーを引き継ぐ（資料をAIが丸ごと再生成した場合用。位置は開いたときの再アンカーが引き受ける）")
     ap.add_argument("--merge", metavar="OTHER_HTML",
                     help="別の人がレビューした同じ資料のHTMLと、コメント・ユーザーを合流させる（IDで突き合わせた和集合）")
+    ap.add_argument("--apply-state", metavar="REVIEW_STATE_JSON",
+                    help="AIが出力した review-state.json を読み、対応済みの指摘を完了にする")
+    ap.add_argument("--force", action="store_true",
+                    help="--merge で docId が一致しなくても続行する（別の資料同士のマージ）")
     args = ap.parse_args()
 
-    if args.strip and (args.merge or args.carry_from):
-        sys.exit("--strip とコメントの持ち込み（--merge / --carry-from）は同時に指定できません。")
+    if args.strip and (args.merge or args.carry_from or args.apply_state):
+        sys.exit("--strip とコメントの持ち込み（--merge / --carry-from / --apply-state）は同時に指定できません。")
+    # ★--check は書き込まないので、書き込む指定と一緒に渡されたら黙って捨てずに断る。
+    #   無言で無視すると「反映したつもり」で先へ進まれる
+    if args.check and (args.merge or args.carry_from or args.apply_state or args.in_place or args.out):
+        sys.exit("--check は状態を表示するだけです。書き込む指定（--in-place / -o / --merge / "
+                 "--carry-from / --apply-state）とは同時に指定できません。")
 
     src = pathlib.Path(args.target)
     if not src.exists():
@@ -191,14 +499,17 @@ def main():
     found = find_block(html)
 
     print("対象   : %s (%.1f KB)" % (src.name, len(html.encode()) / 1024))
-    print("レイヤー: %s" % ("あり（更新します）" if found else "なし（新規追加します）"))
+    # --check は書き込まないので「更新します」と言ってはいけない。版は report_check が出す
+    if not args.check:
+        print("レイヤー: %s" % ("あり（更新します）" if found else "なし（新規追加します）"))
+    elif not found:
+        print("レイヤー: なし")
     # レイヤー自身のCSS（サイドバーの height:100vh など）を拾わないよう、資料側だけを見る
     warn_host(html[:found[0]] + html[found[1]:] if found else html, sys.stdout)
 
     if args.check:
         if found:
-            store = extract_store(html[found[0]:found[1]], "comment-store") or "[]"
-            print("コメント数: 約 %d 件" % store.count('"id":'))
+            report_check(html[found[0]:found[1]])
         return
 
     if args.strip:
@@ -207,6 +518,11 @@ def main():
         new = (html[:found[0]] + html[found[1]:]).replace("\n\n\n", "\n\n")
     else:
         block = ASSET.read_text(encoding="utf-8").rstrip("\n")
+        # 版の系譜の起点。既存レイヤーがあればその meta を引き継ぐ（無ければ新規注入）。
+        # ★comment-store / user-master と同じループに comment-meta を混ぜてはいけない。
+        #   そのままコピーすると revId まで引き継がれ、別のファイルなのに同じ版になる
+        base_meta = load_meta(html[found[0]:found[1]]) if found else {}
+        meta_op = ("in-place" if args.in_place else "update") if found else "inject"
         if found:
             old = html[found[0]:found[1]]
             for sid in ("comment-store", "user-master"):
@@ -226,6 +542,10 @@ def main():
                     carried = True
             if not carried:
                 sys.exit("引き継ぎ元にコメントデータがありません: %s" % carry)
+            # docId と lineage は引き継ぎ元から継承する（同じ資料の続きだから）。
+            # revId は新しく振る（bump_meta が parentRevId に引き継ぎ元の revId を入れる）
+            base_meta = load_meta(carry_html)
+            meta_op = "carry"
             store = extract_store(block, "comment-store") or "[]"
             print("引き継ぎ: %s から約 %d 件" % (carry.name, store.count('"id":')))
         if args.merge:
@@ -236,6 +556,10 @@ def main():
             other_comments = load_store(other_html, "comment-store")
             if other_comments is None:
                 sys.exit("合流元にコメントデータがありません: %s" % other)
+            # ★合流の前に事故を検知する。--merge は分岐の後始末であって、
+            #   「別の資料だった」「そもそも分岐していなかった」は防げていなかった
+            other_meta = load_meta(other_html)
+            guard_different_doc(base_meta, other_meta, src.name, other.name, args.force)
             base_comments = load_store(block, "comment-store") or []
             # レイヤーがまだ無いファイルに合流するとき、いま block に入っているユーザーは
             # アセット同梱の「レビュアー1」＝ただの初期値であってデータではない。
@@ -252,6 +576,7 @@ def main():
             print("合流   : %s の %d 件を取り込み、%d 件 → %d 件（新規 %d 件・重複 %d 件）"
                   % (other.name, len(other_comments), len(base_comments),
                      len(merged_comments), added, len(other_comments) - added))
+            report_lineage(base_meta, other_meta, src.name, other.name)
             print("         ユーザー: %d 人 → %d 人" % (len(base_users), len(merged_users)))
             # 突き合わせは id だけで行う（名前で寄せると、同姓の別人が1人に潰れる）。
             # そのぶん、AさんとBさんが「それぞれ自分を追加した」場合は同名で2人並ぶ。
@@ -271,6 +596,17 @@ def main():
                   "ブラウザで開いた時点で、引用が本文に一意に残っている指摘は位置が復元されます。")
             print("         ※復元できなかった指摘は画面上部に警告が出ますが、"
                   "コメントそのものは失われていません。")
+            # 系譜は主ファイル側を維持し、両方の lineage を時系列でマージする
+            base_meta = merge_meta(base_meta, other_meta)
+            meta_op = "merge"
+        # ★carry / merge のあとに流す。丸ごと再生成 → 引き継ぎ → 状態反映 が1コマンドで通る
+        if args.apply_state:
+            state = pathlib.Path(args.apply_state)
+            if not state.exists():
+                sys.exit("状態ファイルが見つかりません: %s" % state)
+            block = apply_state(block, state)
+        block = replace_store(block, "comment-meta",
+                              dump_store(bump_meta(base_meta, meta_op, doc_title(html))))
         if found:
             new = html[:found[0]] + block + html[found[1]:]
         elif "</body>" in html:
@@ -293,6 +629,12 @@ def main():
         # 資料_commented_commented.html になる。何をしたファイルかが名前で分かるようにする
         base = src.stem[: -len("_commented")] if src.stem.endswith("_commented") else src.stem
         dst = src.with_name(base + "_merged.html")
+    elif args.apply_state and not args.carry_from:
+        # --merge と同じ理由（入力が 資料_commented.html なので _commented_commented になる）。
+        # ★--carry-from との併用時は既定のまま _commented にする。そのときの対象は
+        #   AIが丸ごと再生成した素の資料で、「レイヤーを新規に入れた」が名前に出るべきだから
+        base = src.stem[: -len("_commented")] if src.stem.endswith("_commented") else src.stem
+        dst = src.with_name(base + "_applied.html")
     else:
         dst = src.with_name(src.stem + "_commented.html")
     dst.write_text(new, encoding="utf-8")

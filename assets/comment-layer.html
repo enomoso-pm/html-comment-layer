@@ -1,5 +1,5 @@
 <!-- ===================================================================
-     COMMENT-LAYER v2.13.0 : START
+     COMMENT-LAYER v2.14.0 : START
      HTML資料にレビューコメント機能を後付けするドロップイン・ブロック。
      この START 〜 END までを丸ごと差し替えればバージョンアップできる。
      資料側に必要な条件：
@@ -10,6 +10,7 @@
 
 <script id="user-master" type="application/json">[{"id":"u1","name":"レビュアー1","color":"#0084A3"}]</script>
 <script id="comment-store" type="application/json">[]</script>
+<script id="comment-meta" type="application/json">{}</script>
 
 <style id="cl-style">
 /* ===================================================================
@@ -294,6 +295,27 @@ html.cl-open #cl-sidebar{ display:flex; }
 .cl-orphan{ display:flex; gap:6px; align-items:flex-start; font-size:12px; line-height:1.6;
   color:var(--cl-orange-1000); background:var(--cl-orange-50); border-radius:6px; padding:7px 9px; margin-top:8px; }
 .cl-done-note{ display:flex; align-items:center; gap:5px; font-size:12px; color:var(--cl-green-1000); margin-top:8px; font-weight:700; }
+/* AI完了の検算。見た目は既存の警告（.cl-orphan）と同じものを使い、新しい配色は作らない */
+.cl-ack{ margin-top:7px; }
+#cl-unver{ display:flex; align-items:center; gap:6px; width:100%; text-align:left; cursor:pointer;
+  font:700 12px/1.5 var(--cl-font); color:var(--cl-orange-1000); background:var(--cl-orange-50);
+  border:0; border-bottom:1px solid var(--cl-gray-300); padding:8px 16px; }
+#cl-unver[hidden]{ display:none; }
+#cl-unver:hover{ background:var(--cl-orange-100, var(--cl-orange-50)); }
+/* 版の系譜。既定は畳んだ状態。開く取っ手（この行そのもの）が常に見えている */
+#cl-rev{ border-bottom:1px solid var(--cl-gray-300); background:var(--cl-gray-50); }
+#cl-rev[hidden]{ display:none; }
+#cl-rev-line{ display:block; width:100%; text-align:left; cursor:pointer; border:0; background:none;
+  font:400 11.5px/1.6 var(--cl-font); color:var(--cl-gray-600); padding:6px 16px; }
+#cl-rev-line:hover{ color:var(--cl-text); text-decoration:underline; }
+#cl-rev-name{ display:block; margin:0 16px 6px; cursor:pointer; border:0; background:none; padding:0;
+  font:700 11.5px/1.6 var(--cl-font); color:var(--cl-orange-1000); text-decoration:underline; }
+#cl-rev-name[hidden]{ display:none; }
+#cl-rev-list{ list-style:none; margin:0; padding:0 16px 8px; font:400 11px/1.7 var(--cl-font);
+  color:var(--cl-gray-600); max-height:150px; overflow-y:auto; }
+#cl-rev-list[hidden]{ display:none; }
+#cl-rev-list li{ display:flex; gap:8px; }
+#cl-rev-list b{ font-weight:700; color:var(--cl-text); }
 
 /* --- 3点リーダーのメニュー（編集・削除・完了をここに集約する） ---
        カードの中に置く。body 直下に出すと本文テキストの走査から除外し忘れる穴が空く */
@@ -558,6 +580,16 @@ html.cl-guide-open #cl-guide{ display:flex; }
     </div>
   </div>
 
+  <!-- 版の系譜。ファイル往復は分岐するので「いま何代目の、誰の版から派生したのか」を1行だけ出す。
+       ★資料本体には絶対に出さない（配布物に版情報が出てはいけない）。ここはコメントUI側 -->
+  <div id="cl-rev" hidden>
+    <button type="button" id="cl-rev-line" data-cl="rev-toggle" aria-expanded="false"></button>
+    <!-- 名前の設定は系譜の開閉と別の取っ手にする。1つの行に2つの意味を持たせると、
+         名前が未設定のあいだ系譜を開く手段が無くなる -->
+    <button type="button" id="cl-rev-name" data-cl="master" hidden>名前を設定</button>
+    <ol id="cl-rev-list" hidden></ol>
+  </div>
+
   <div class="cl-listbar">
     <span class="cl-listbar-count" id="cl-count"></span>
     <label class="cl-sortwrap">
@@ -568,6 +600,10 @@ html.cl-guide-open #cl-guide{ display:flex; }
       </select>
     </label>
   </div>
+
+  <!-- AI完了の検算。完了を畳んでいても見えるように一覧の外（上）に出す。
+       押すと最初の未検算カードへ飛ぶ。全部「確認済み」にすれば消える -->
+  <button type="button" id="cl-unver" data-cl="unver-jump" hidden></button>
 
   <div id="cl-list"></div>
 
@@ -1134,9 +1170,13 @@ html.cl-guide-open #cl-guide{ display:flex; }
 (function () {
   'use strict';
   if (window.__commentLayer) return;
-  var VERSION = '2.13.0';
+  var VERSION = '2.14.0';
 
   var comments = [], users = [], pinMode = false, draft = null, dirty = false, activeId = null, booted = false;
+  // 版の系譜（comment-meta）。ファイル往復は本質的に分岐するので、分岐を防ぐのではなく
+  // 「気づかずに古い版を直していた」を検知できるようにする。詳細は readMeta() のコメント
+  var meta = null;
+  var LINEAGE_MAX = 200;
   var activeUserId = null, toastTimer = null;
   var openMenuId = null, openMenuRid = null, menuMode = 'main';
   var assignQuery = '', assignIndex = -1;
@@ -1250,8 +1290,13 @@ html.cl-guide-open #cl-guide{ display:flex; }
     renderUsers();
     initUserCombo();
     initMasterFilter();
-    updateBadge();
+    // 版の系譜は「自分が誰か」が決まってから読む（無いファイルではその場で作り、by に名前を入れる）。
+    // ★ここでは dirty を立てない。旧ファイルを開いただけで未保存警告が出てはいけない
+    meta = readMeta();
     reanchorOrphans();            // 版をまたいだ資料でも、特定できる指摘はハイライトを貼り直す
+    // ★バッジは reanchorOrphans() のあとで。未検算の判定は anchorReason と本文の
+    //   ハイライトを見るので、先に数えると全件が未検算に見える
+    updateBadge();
     render();
     offerRestore();               // 未保存コメントの退避があれば、ここで復元を提案する
   }
@@ -1263,6 +1308,174 @@ html.cl-guide-open #cl-guide{ display:flex; }
     if (!n || !n.textContent.trim()) return fallback;
     try { var v = JSON.parse(n.textContent); return Array.isArray(v) ? v : fallback; }
     catch (e) { console.warn('[comment-layer] ' + id + ' の読み込みに失敗:', e); return fallback; }
+  }
+
+  /* ==========================================
+     版の系譜（comment-meta）
+     ファイルを送り合う方式は本質的に分岐する。--merge は分岐の後始末であって、
+     分岐の検知はできていなかった。ここで目指すのは事故の防止ではなく事故の検知。
+
+       docId       … 同じ資料の系統。注入時に1度だけ作り、以降は絶対に変えない
+       revId       … このファイル1個の識別子。保存のたびに作り直す
+       parentRevId … 開いた時点で入っていた revId
+       gen         … 何代目か。lineage を打ち切っても正しい数が出るように別に持つ
+       lineage     … 直近 LINEAGE_MAX 件。先頭から捨てる
+       unverified  … 保存した時点の「AI完了のうち検算できていない件数」（--check 用の控え）
+
+     ★unverified を書くのはブラウザだけ。Python 側は照合ができないので、
+       書き込み経路（--apply-state / --merge / --carry-from / --in-place）では必ず消す。
+       古い数字を残すと --check が適用前の数を報告してしまう。
+     ★comment-store の構造は変えない（配列のまま）。後方互換のためメタは別タグに置く。
+     ========================================== */
+  function randId(prefix) {
+    var cs = 'abcdefghijklmnopqrstuvwxyz0123456789', s = '';
+    for (var i = 0; i < 8; i++) s += cs.charAt(Math.floor(Math.random() * cs.length));
+    return prefix + '-' + s;
+  }
+
+  // タグごと無いファイル（v2.13 以前を手で継ぎ足した場合など）でも落ちないように、
+  // 無ければその場で作る。★必ず comment-store の隣＝差し込みブロックの内側に置くこと。
+  // 外に作ると --strip で消えず、find_block の範囲からも外れて置き去りになる
+  function metaNode() {
+    var n = document.getElementById('comment-meta');
+    if (n) return n;
+    n = document.createElement('script');
+    n.id = 'comment-meta';
+    n.type = 'application/json';
+    n.textContent = '{}';
+    var store = document.getElementById('comment-store');
+    if (store && store.parentNode) store.parentNode.insertBefore(n, store.nextSibling);
+    else document.body.appendChild(n);
+    return n;
+  }
+
+  // ★内容ハッシュにはしない。ハッシュ対象の中にハッシュ自身が入って循環する
+  function readMeta() {
+    var n = metaNode(), v = null;
+    if (n && n.textContent.trim()) {
+      try { v = JSON.parse(n.textContent); }
+      catch (e) { console.warn('[comment-layer] comment-meta の読み込みに失敗:', e); }
+    }
+    if (!v || typeof v !== 'object' || Array.isArray(v)) v = {};
+    if (!Array.isArray(v.lineage)) v.lineage = [];
+    // v2.13 以前のファイルには comment-meta が無い。開いた時点で作って補う。
+    // ★ここで未保存フラグを立てないこと。normalize()（resolved の補完）と同じ理由で、
+    //   旧ファイルを開いただけで「未保存です」と出てはいけない
+    if (!v.docId) {
+      v.schema = 1;
+      v.docId = randId('doc');
+      v.revId = randId('rev');
+      v.parentRevId = null;
+      v.gen = 1;
+      v.lineage = [{ revId: v.revId, at: nowISO(), by: metaBy(), op: 'inject' }];
+    }
+    if (typeof v.gen !== 'number' || v.gen < 1) v.gen = v.lineage.length || 1;
+    if (!v.revId) v.revId = randId('rev');
+    return v;
+  }
+
+  // ★生の名前をそのまま入れる（空文字にしない）。「未設定かどうか」は表示側だけで判定する。
+  //   空で保存すると lineage から「誰の版か」が永久に失われるが、既定値のままなら
+  //   「既定値のまま出した版」という事実は残る
+  function metaBy() {
+    var u = currentUser();
+    return (u && u.name) || '';
+  }
+  function isDefaultName(name) {
+    var n = String(name == null ? '' : name).trim();
+    return !n || n === DEFAULT_USER.name;
+  }
+
+  /* ---------- 版情報の1行 ----------
+     ★資料本体には出さない。ここに出すのは「気づかずに古い版を直していた」を防ぐため。
+     名前が既定値のままなら、ここで「名前未設定」を出して設定への入口にする。
+     ★保存トーストには足さない。あれは「保存先はこのPCの中だけ、そのファイルを送り返して」
+       という、いちばん落としたくない念押しを担っている。並べると両方読まれない。 */
+  var OP_JA = { inject: '作成', save: '保存', merge: '合流', carry: '引き継ぎ',
+                'in-place': '更新', update: '更新', ack: '確認' };
+  // 派生元をどう名乗るか。★op を見ないと、CLIが作った版まで「名前未設定の人が保存」になる。
+  // ブラウザ保存（save）のときだけ人の名前を出す。それ以外は人が保存したわけではない
+  var OP_ORIGIN = { inject: 'コマンドで作成', 'in-place': 'コマンドで更新',
+                    update: 'コマンドで更新', carry: 'コマンドで引き継ぎ', merge: 'コマンドで合流' };
+  function originOf(prev) {
+    if (!prev) return '前の版から派生';
+    if (prev.op && prev.op !== 'save') return OP_ORIGIN[prev.op] || ('コマンドで' + prev.op);
+    // 派生元の名前は「そのとき誰だったか」という事実。未設定だったならそう書くだけで、
+    // ここを設定への誘導にはしない（直せるのは自分の名前であって、過去の版ではない）
+    return (isDefaultName(prev.by) ? '名前未設定の人' : prev.by) + ' の版から派生';
+  }
+  function renderRevLine() {
+    var box = $('#cl-rev'), line = $('#cl-rev-line'), list = $('#cl-rev-list');
+    if (!box || !line) return;
+    if (!meta || !meta.docId) { box.hidden = true; return; }
+    box.hidden = false;
+    var lin = Array.isArray(meta.lineage) ? meta.lineage : [];
+    // 派生元＝いまの版のひとつ前。lineage の末尾は自分自身なので、その手前を見る
+    var prev = null;
+    for (var i = lin.length - 1; i >= 0; i--) {
+      if (lin[i] && lin[i].revId === meta.parentRevId) { prev = lin[i]; break; }
+    }
+    var gen = typeof meta.gen === 'number' ? meta.gen : lin.length;
+    if (!meta.parentRevId) {
+      line.textContent = 'この版: 初版';
+    } else {
+      var at = prev ? fmtShort(prev.at) : '';
+      line.textContent = 'この版: ' + gen + '代目・' + originOf(prev) + (at ? '（' + at + '）' : '');
+    }
+    // 誘導は「自分の名前」に対して出す。次に保存する版が誰のものか分からなくなるのを防ぐ。
+    // ★保存トーストには足さない（あそこは送り返しの念押し専用）
+    var nameBtn = $('#cl-rev-name');
+    if (nameBtn) {
+      var mine = isDefaultName((currentUser() || {}).name);
+      nameBtn.hidden = !mine;
+      if (mine) nameBtn.textContent = '名前が未設定です。設定すると、この版が誰のものか残ります';
+    }
+    if (!list.hidden) {
+      list.innerHTML = lin.slice().reverse().map(function (e) {
+        // CLI が作った版に「名前未設定」と書くと、人が保存し忘れたように読める
+        var by = (e.op && e.op !== 'save' && e.op !== 'ack') ? 'コマンド'
+               : (isDefaultName(e.by) ? '名前未設定' : e.by);
+        return '<li><span>' + esc(fmtShort(e.at) || '—') + '</span>' +
+               '<b>' + esc(OP_JA[e.op] || e.op || '') + '</b>' +
+               '<span>' + esc(by) + '</span></li>';
+      }).join('');
+    }
+  }
+
+  /* ---------- 検算: AI完了のうち「本当に直ったか確認できていない」もの ----------
+     ★条件は「ハイライトが存在するか」ではなく「引用が本文から消えたことを確認できたか」。
+     前者で書くと ambiguous（同じ文が複数あって貼れない）と pin型が網を抜ける。
+     anchorReason は reanchorOrphans() が「text型で、ハイライトを失い、貼り直しにも
+     失敗した」ものにだけ入れるので（下の reanchorOrphans 参照）:
+       'none'      … 引用が本文から消えた           → 検算通過
+       'ambiguous' … 同じ文が複数あって貼れない      → 引用は残っている＝未検算
+       undefined   … ハイライトが健在／または pin型  → 未検算
+     人間が完了にしたものは対象外。本文を直さずに完了にする正当な理由があるため。 */
+  function isUnverified(c) {
+    if (!c || !c.resolved || c.resolvedBy !== 'AI') return false;
+    if (c.type !== 'text') return true;               // ピンは本文照合ができない＝常に未検算
+    if (anchorReason[c.id] === 'none') return false;  // 引用が本文から消えた＝直った
+    // ★ハイライトが残っている場合でも、中身が引用と変わっていれば直っている。
+    //   AIが本文を「その場で」書き換えると span は残って中のテキストだけ変わり、
+    //   reanchorOrphans() はハイライトがあるコメントを飛ばすので anchorReason が付かない。
+    //   ここを見ないと、直したのに「変わっていません」と誤警告する（実測で踏んだ）
+    var hs = document.querySelectorAll('.comment-highlight[data-id="' + c.id + '"]');
+    if (hs.length) {
+      var now = '';
+      for (var i = 0; i < hs.length; i++) now += hs[i].textContent;
+      // ★左右で空白の扱いが違うので、比べる前に空白を落としきる。
+      //   quote は savedRange.toString()＝要素の隙間の空白テキストノードを含むが、
+      //   span の連結にはそれが無い（wrapRange が空白だけのノードを FILTER_REJECT する）。
+      //   normalizeQuote は空白を1つに畳むだけなので、要素をまたぐ引用——見出し＋次の行、
+      //   箇条書き2項目、段落2つ——が全部「変わった」と判定され、黙って検算を通っていた。
+      //   空白だけの差は「変わっていない」に倒す（未検算のまま残る＝安全側）
+      if (bare(now) !== bare(c.quote)) return false;
+    }
+    return true;                                      // 引用がそのまま残っている／ambiguous
+  }
+  function bare(s) { return String(s == null ? '' : s).replace(/\s+/g, ''); }
+  function unverifiedCount() {
+    return comments.filter(isUnverified).length;
   }
 
   /* ---------- ユーティリティ ---------- */
@@ -1851,22 +2064,45 @@ html.cl-guide-open #cl-guide{ display:flex; }
   function buildReviewMarkdown() {
     var title = (document.title || '').trim() || 'HTML資料';
     var out = ['以下はHTML資料「' + title + '」へのレビュー指摘です。各指摘の「対象」の引用を本文から検索し、指摘内容を反映してください。',
-      '各指摘には「状態」があります。状態が「完了」のものは対応済みです。記録として残しているだけなので、再度修正しないでください。',
+      '各指摘には「状態」があります。状態が「完了」のものは対応済みなので、再度修正しないでください。',
+      '「人の確認待ち」と書かれているものは、AIが対応済みと申告して人がまだ確認していない状態です。指示がない限り触らないでください。',
       '見出しの [ ] は優先度です。必須＝必ず直す、要望＝できれば直す、軽微＝細かい好み。表記が無いものは優先度の指定なしです。',
-      '「返信」はその指摘に付いたやりとりです。最後の返信が最新の状況を表します。', ''];
+      '「返信」はその指摘に付いたやりとりです。最後の返信が最新の状況を表します。',
+      '各指摘の「ID」は、修正後の書き戻しに使います（末尾の手順を参照）。', ''];
     orderedComments().forEach(function (c, i) {
       var when = fmtFull(c.date), upd = fmtFull(c.updatedAt);
       var lab = labelOf(c);
       out.push('## 指摘 ' + (i + 1) + (lab ? ' [' + LABEL_JA[lab] + ']' : '') + '（' + (c.author || '不明') +
                (when ? '、' + when : '') + (upd && upd !== when ? '、最終更新 ' + upd : '') + '）');
-      out.push(isDone(c)
-        ? '状態: 完了（' + (c.resolvedBy || '担当者不明') + (fmtFull(c.resolvedAt) ? '、' + fmtFull(c.resolvedAt) : '') + '）※対応済み。修正不要'
-        : '状態: 未対応');
+      // 書き戻し先を特定するための機械可読なID。位置は「状態」の直前で固定する。
+      // 完了済みにも出す（AIが「触ってはいけない対象」を識別できるようにするため）
+      out.push('ID: ' + c.id);
+      // ★状態は3分岐。完了を一律で「修正不要」にすると、AIが直していないのに完了にした
+      // 指摘（isUnverified）を次の周で確実に飛ばす。カードに警告を出すだけでは足りず、
+      // Markdown側は既存の「修正不要」を打ち消す必要がある
+      if (!isDone(c)) out.push('状態: 未対応');
+      else if (isUnverified(c)) {
+        // ★「引用が残っている」から「直っていない」へ推論を跨がない。
+        //   引用文そのものを変えない修正（注記の追加、表への列追加）は、正しく直しても
+        //   引用は残る。ピンは構造上つねに残る。ここで「未対応として扱え」と書くと、
+        //   AI側から解除する手段が無いまま毎周おなじ箇所を直し続ける（注記の二重挿入）。
+        //   確認は人の仕事なので（そのための「確認済み」ボタン）、AIには何もさせない
+        out.push('状態: 完了（' + (c.resolvedBy || '担当者不明') + '）※' +
+          (c.type === 'pin'
+            ? '図・画面上の指摘なので、本文の照合で変更を確認できません'
+            : '対象の文章は本文に残っています') +
+          '。AIが完了と申告済み・人の確認待ちです。指示がない限り再修正しないでください');
+      } else {
+        out.push('状態: 完了（' + (c.resolvedBy || '担当者不明') +
+          (fmtFull(c.resolvedAt) ? '、' + fmtFull(c.resolvedAt) : '') + '）※対応済み。修正不要');
+      }
       if (c.type === 'pin') {
         var near = nearestHeadingText(pinTop(c));
         out.push('対象: 図・画面上の位置への指摘（ピン）' + (near ? '。最寄りの見出し: 「' + near + '」' : ''));
       } else {
-        var lost = !document.querySelector('.comment-highlight[data-id="' + c.id + '"]');
+        // 「対応済みの可能性」は未完了のときだけ。完了しているなら推定を重ねる意味が無く、
+        // AI完了で本文が残っている場合は上の状態行がすでに正しいことを言っている
+        var lost = !isDone(c) && !document.querySelector('.comment-highlight[data-id="' + c.id + '"]');
         out.push(lost ? '対象（注意: 本文中に見つかりません。資料の更新で書き換わった＝対応済みの可能性があります。引用は指摘時点のもの）:' : '対象:');
         String(c.quote == null ? '' : c.quote).split('\n').forEach(function (q) { out.push('> ' + q); });
       }
@@ -1885,7 +2121,52 @@ html.cl-guide-open #cl-guide{ display:flex; }
       }
       out.push('');
     });
-    return out.join('\n');
+    return out.concat(writeBackInstructions()).join('\n');
+  }
+
+  /* ---------- 修正後の書き戻し手順 ----------
+     ★AIには resolved の書き戻ししかさせない。返信もコメントも書かせない。
+       本文を見れば「何をどう直したか」は分かるし、9件の指摘の下にAIの作文が9件並ぶと
+       人間の議論が薄まる。判断できない箇所はチャットで聞けば済む（対話セッションなので）。
+     ★埋め込みJSONを直接編集させる経路も持たない。書き戻し口は --apply-state の一本。
+       ファイル破壊の防止を、AIがプロンプトの箇条書きを守るかどうかに賭けないため。
+       この判断のおかげで、エスケープ規約（u003c 化・境界マーカー伏せ字）を
+       AIに課す必要がまるごと消えている（責任は dump_store 側にある）。
+     ★手順の文面にHTMLタグを書かないこと。「Markdownに断片が混ざらない」は検査項目で、
+       AI渡しの文章に生タグが出ると資料の一部と読み違えられる。id で指せば足りる。 */
+  var STORE_TAG = '「id="comment-store" の script タグ」';
+  function writeBackInstructions() {
+    return [
+      '---',
+      '## 修正後の手順（必須）',
+      '',
+      '本文を修正したら、対応した指摘の一覧を `review-state.json` として出力してください。',
+      'HTMLファイル内の' + STORE_TAG + 'は**編集しないでください**。',
+      '',
+      '```json',
+      '{',
+      '  "updates": [',
+      '    {"id": "txt-msjglpqa", "resolved": true},',
+      '    {"id": "txt-abcd1234", "resolved": true}',
+      '  ]',
+      '}',
+      '```',
+      '',
+      '- 本文を修正した指摘だけを `resolved: true` にしてください',
+      '- 指摘の意図が読み取れない、または本文をどう直すべきか判断できない場合は、',
+      '  **その指摘を `updates` に含めず、その場で利用者に確認してください**',
+      '- 既に完了している指摘（「人の確認待ち」を含む）は `updates` に含めず、本文も触らないでください',
+      '',
+      '出力後、利用者に次のコマンドを案内してください:',
+      '',
+      '    python3 scripts/add_comment_layer.py 資料.html --apply-state review-state.json --in-place',
+      '',
+      '### 禁止事項',
+      '',
+      '- ' + STORE_TAG + 'を含め、HTML内のスクリプトタグを一切編集しない',
+      '- 本文を修正していない指摘を `resolved: true` にしない',
+      ''
+    ];
   }
 
   // ボタンの文言だけを一時的に差し替える。ボタンの中にはアイコンのSVGが入っているので、
@@ -2912,6 +3193,19 @@ html.cl-guide-open #cl-guide{ display:flex; }
         ? '未完了 ' + open + ' 件 / 全 ' + comments.length + ' 件'
         : 'コメント 0 件';
     }
+    // AI完了のうち検算できていない件数。★数えるのは「AIが完了にした件数」ではなく
+    // 「確認が要る件数」。全部確認すれば 0 になって消える＝押せば減る目標があるので、
+    // 常時1以上で固定されて誰も見なくなる、という警告バッジの死に方をしない
+    renderRevLine();
+    var uv = $('#cl-unver');
+    if (uv) {
+      var n = unverifiedCount();
+      uv.hidden = !n;
+      if (n) {
+        uv.innerHTML = svgIcon('warn', 16) +
+          '<span>AIが完了にした ' + n + ' 件が未検算です（押すと確認へ）</span>';
+      }
+    }
   }
 
   function render() {
@@ -2956,6 +3250,9 @@ html.cl-guide-open #cl-guide{ display:flex; }
     positionMenu();
     if (openMenuId && menuMode === 'assign') wireAssignMenu();
     if (activeId) nodesFor(activeId).forEach(function (n) { n.classList.add('cl-active'); });
+    // ★カードとバッジは同じ派生値（未検算）を別々に描いている。ここで揃えておかないと、
+    // 本文側が変わったのにバッジだけ古い数のまま残る。数え直しは querySelectorAll 1周ぶんで安い
+    updateBadge();
   }
 
   // 完了済みの区切り＝開閉の取っ手。件数は畳んでいても必ず出す
@@ -2999,7 +3296,11 @@ html.cl-guide-open #cl-guide{ display:flex; }
     var lab = labelOf(c);
     var edited = c.updatedAt && c.date && c.updatedAt !== c.date;
     var when = fmtShort(edited ? c.updatedAt : c.date);
-    var orphan = c.type === 'text' && !document.querySelector('.comment-highlight[data-id="' + c.id + '"]');
+    // 「対応済みの可能性」は未完了のときだけ。完了しているものに推定を重ねても意味がなく、
+    // AI完了で本文が残っている場合は下の未検算の警告のほうが正確なことを言う
+    var orphan = !done && c.type === 'text' &&
+      !document.querySelector('.comment-highlight[data-id="' + c.id + '"]');
+    var unver = isUnverified(c);
 
     var item = document.createElement('div');
     item.className = 'cl-item' + (c.id === activeId ? ' cl-active' : '') + (done ? ' cl-done' : '');
@@ -3072,6 +3373,17 @@ html.cl-guide-open #cl-guide{ display:flex; }
         (anchorReason[c.id] === 'ambiguous'
           ? '同じ文章が本文に複数あるため、どこへの指摘か特定できませんでした。<strong>指摘が反映されたわけではありません。</strong>'
           : '本文中に対象が見つかりません。資料の更新で該当箇所が書き換わった（指摘が反映された）可能性があります') +
+        '</div></div>' : '') +
+      // AIの自己申告を人間が検算する。★「気づかせる」だけでなく「消せる」ようにすること。
+      // 導出状態なので、確認済みボタンが無いとバッジが永久に0にならず、誰も見なくなる
+      (unver ? '<div class="cl-orphan cl-unverified">' + svgIcon('warn', 16) + '<div>' +
+        (c.type === 'pin'
+          ? 'AIが完了にしましたが、<strong>図・画面上の指摘は本文の照合ができません。</strong>直っているか確認してください。'
+          : anchorReason[c.id] === 'ambiguous'
+            ? 'AIが完了にしましたが、<strong>同じ文章が本文に複数あり、変わったか確認できません。</strong>'
+            : 'AIが完了にしましたが、<strong>対象の文章は変わっていません。</strong>') +
+        '<button class="cl-btn cl-ack" data-type="text" data-size="xs" data-cl="ack" data-id="' +
+        esc(c.id) + '">' + svgIcon('check', 16) + '確認済みにする</button>' +
         '</div></div>' : '') +
       (done ? '<div class="cl-done-note">' + svgIcon('check', 16) + '完了' + (c.resolvedBy ? '（' + esc(c.resolvedBy) + '）' : '') +
               (fmtShort(c.resolvedAt) ? ' ' + esc(fmtShort(c.resolvedAt)) : '') + '</div>' : '') +
@@ -3386,6 +3698,25 @@ html.cl-guide-open #cl-guide{ display:flex; }
     document.getElementById('comment-store').textContent = enc(comments);
     document.getElementById('user-master').textContent = enc(users);
 
+    // 版を1つ進める。★メモリ上の meta も同じオブジェクトを書き換えて進めること。
+    // ここを忘れると、同じタブで2回保存したとき2回目の parentRevId が初回と同じになり、
+    // 連続保存が「分岐」に見える（revId / gen / lineage の3つとも進める）
+    if (!meta) meta = readMeta();
+    var savedAt = nowISO();
+    meta.schema = 1;
+    meta.parentRevId = meta.revId || null;
+    meta.revId = randId('rev');
+    meta.gen = (typeof meta.gen === 'number' ? meta.gen : 0) + 1;
+    meta.title = (document.title || '').trim();
+    // ★その場で数え直す。描画時に作ったバッジの値を持ち回すと、「確認済み」を押した
+    // 直後の保存で古い数が焼かれる（3件確認して0になったのにファイルには3と書かれる）
+    meta.unverified = unverifiedCount();
+    meta.unverifiedAt = savedAt;
+    meta.lineage = (Array.isArray(meta.lineage) ? meta.lineage : [])
+      .concat([{ revId: meta.revId, at: savedAt, by: metaBy(), op: 'save' }])
+      .slice(-LINEAGE_MAX);
+    metaNode().textContent = enc(meta);
+
     var html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
 
     $('#cl-list').innerHTML = listHTML;
@@ -3458,6 +3789,26 @@ html.cl-guide-open #cl-guide{ display:flex; }
     else if (a === 'edit') editComment(t.getAttribute('data-id'));
     else if (a === 'del') deleteComment(t.getAttribute('data-id'));
     else if (a === 'resolve') toggleResolve(t.getAttribute('data-id'));
+    // AI完了の検算。人が中身を見て納得したら、完了者を自分に付け替えて警告を消す。
+    // ★新しい action は要らない。既存の resolve が resolvedAt / resolvedBy を書き換えるので
+    //   そのまま流用できる（スキーマ変更なし・commit を通るので未保存フラグと自動退避も揃う）
+    else if (a === 'ack') {
+      commit({ type: 'resolve', id: t.getAttribute('data-id'), by: (currentUser() || {}).name || '' });
+    }
+    // 未検算バッジ。押したら最初の該当カードへ飛ぶ。
+    // ★完了を畳んでいると対象が隠れているが、focusFromList が revealIfCollapsed を
+    //   呼ぶので開き直せる（畳む機能には開く取っ手が要る、の約束）
+    else if (a === 'unver-jump') {
+      var first = comments.filter(isUnverified)[0];
+      if (first) { setSidebar(true); focusFromList(first.id); }
+    }
+    // 版情報の行。名前が未設定なら「ユーザーを管理」へ、そうでなければ系譜を開閉する
+    else if (a === 'rev-toggle') {
+      var rl = $('#cl-rev-list');
+      rl.hidden = !rl.hidden;
+      t.setAttribute('aria-expanded', rl.hidden ? 'false' : 'true');
+      renderRevLine();
+    }
     else if (a === 'toggle-done') setHideDone(!hideDone);
     else if (a === 'label') cycleLabel(t.getAttribute('data-id'));
     else if (a === 'reply') startReply(t.getAttribute('data-id'), null);
@@ -3520,6 +3871,8 @@ html.cl-guide-open #cl-guide{ display:flex; }
     get openMenuRid() { return openMenuRid; },
     get menuMode() { return menuMode; },
     get anchorReason() { return anchorReason; },
+    get meta() { return meta; },
+    get unverified() { return comments.filter(isUnverified).map(function (c) { return c.id; }); },
     reassign: function (id, userId, replyId) {
       commit({ type: 'reassign', id: id, userId: userId, replyId: replyId || null });
     },
@@ -3567,4 +3920,4 @@ html.cl-guide-open #cl-guide{ display:flex; }
   };
 })();
 </script>
-<!-- ===== COMMENT-LAYER v2.13.0 : END ===== -->
+<!-- ===== COMMENT-LAYER v2.14.0 : END ===== -->
