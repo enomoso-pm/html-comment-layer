@@ -492,8 +492,15 @@ html.cl-guide-open #cl-guide{ display:flex; }
    折り返して全部見え、クリックで丸ごと選べる（改行は入らないのでコピーは1行のまま） */
 #cl-guide .cl-g-cmd{ font:400 12.5px/1.8 var(--cl-mono); background:var(--cl-gray-50);
   border:1px solid var(--cl-border); border-radius:6px; padding:8px 10px; margin:6px 0 0;
-  color:var(--cl-ink); white-space:pre-wrap; overflow-wrap:anywhere;
+  color:var(--cl-ink); white-space:pre-wrap;
   -webkit-user-select:all; user-select:all; }
+/* ★引数はそれぞれ nowrap で包み、折り返しをスペースの位置だけに限る。
+   放っておくとブラウザはハイフンの直後でも折るので、幅しだいで
+   「review-」「state.json」や、最悪「--」「apply-state」に割れる（実測: 680〜740px と
+   500〜580px で発生。半画面のデスクトップでも起きる）。後者はフラグ名の誤読を生む。
+   ★ここに置く語は「いちばん長い語がこの枠に収まること」が条件（現状 28 文字）。
+     もっと長い引数を足すときは、語の途中に折り返し点を作ってから足すこと。 */
+#cl-guide .cl-g-cmd > span{ display:inline; white-space:nowrap; }
 .cl-g-tip{ display:flex; gap:8px; background:var(--cl-key-50); border-left:4px solid var(--cl-primary);
   border-radius:0 8px 8px 0; padding:12px 14px; font-size:13px; line-height:1.85; margin-top:16px; color:var(--cl-gray-700); }
 .cl-g-tip .cl-i{ color:var(--cl-primary); margin-top:3px; }
@@ -1155,7 +1162,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
         コピーした文章の末尾に手順が入っているので、こちらから指示しなくても出てきます
         （直した指摘のIDだけが並んだ、短いファイルです）</li>
       <li><strong>そのファイルを資料に流し込みます。</strong>手元で1回だけコマンドを流してください
-        <div class="cl-g-cmd">python3 scripts/add_comment_layer.py 資料.html --apply-state review-state.json --in-place</div></li>
+        <div class="cl-g-cmd"><span>python3</span> <span>scripts/add_comment_layer.py</span> <span>資料.html</span> <span>--apply-state</span> <span>review-state.json</span> <span>--in-place</span></div></li>
       <li><strong>資料を開き直すと、AIが完了にしたものが「未検算」として出ます。</strong>
         一覧の上に「AIが完了にした ○件が未検算です」が出るので押し、
         本文が本当に直っているか目で見て<strong>「確認済みにする」</strong>を押します。全部押せば表示は消えます</li>
