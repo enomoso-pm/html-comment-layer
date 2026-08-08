@@ -467,7 +467,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
 /* --- ページ送りはブラウザ標準の横スクロール＋スナップに任せる ---
    自前で「横に何px動いたら1ページ」を書くと、トラックパッドの慣性の長さが振り方しだいで
    決まらないせいで必ず破綻する。締め出しを短くすれば一振りで2ページ送られ、長くすれば
-   次の一振りが効かない。どちらも直せない。9枚を横に並べて scroll-snap に任せれば、
+   次の一振りが効かない。どちらも直せない。全ページを横に並べて scroll-snap に任せれば、
    指の動きにそのまま追従し、scroll-snap-stop:always が「一度に1枚まで」を保証する。 */
 .cl-g-body{ flex:1 1 auto; min-height:0; display:flex; padding:0;
   overflow-x:auto; overflow-y:hidden; overscroll-behavior:contain;
@@ -483,6 +483,17 @@ html.cl-guide-open #cl-guide{ display:flex; }
 #cl-guide .cl-g-lead{ font-size:14px; line-height:1.9; margin:0 0 14px; }
 #cl-guide .cl-g-list{ margin:0; padding-left:22px; font-size:14px; line-height:1.9; list-style:disc; }
 #cl-guide .cl-g-list li{ margin-bottom:8px; list-style:disc; }
+/* 手順は番号付き。上の初期化が ol の list-style を潰しているので、ここで明示的に戻す */
+#cl-guide .cl-g-flow{ margin:0; padding-left:24px; font-size:14px; line-height:1.9; list-style:decimal; }
+#cl-guide .cl-g-flow li{ margin-bottom:10px; list-style:decimal; }
+#cl-guide .cl-g-mono{ font-family:var(--cl-mono); font-size:13px; font-weight:700; color:var(--cl-ink); }
+/* コマンドの行。★横スクロールにはしない。パネル幅（720px）に収まらない長さなので、
+   nowrap だと右端で切れたまま止まり、見えている範囲だけを写し間違える。pre-wrap なら
+   折り返して全部見え、クリックで丸ごと選べる（改行は入らないのでコピーは1行のまま） */
+#cl-guide .cl-g-cmd{ font:400 12.5px/1.8 var(--cl-mono); background:var(--cl-gray-50);
+  border:1px solid var(--cl-border); border-radius:6px; padding:8px 10px; margin:6px 0 0;
+  color:var(--cl-ink); white-space:pre-wrap; overflow-wrap:anywhere;
+  -webkit-user-select:all; user-select:all; }
 .cl-g-tip{ display:flex; gap:8px; background:var(--cl-key-50); border-left:4px solid var(--cl-primary);
   border-radius:0 8px 8px 0; padding:12px 14px; font-size:13px; line-height:1.85; margin-top:16px; color:var(--cl-gray-700); }
 .cl-g-tip .cl-i{ color:var(--cl-primary); margin-top:3px; }
@@ -893,10 +904,17 @@ html.cl-guide-open #cl-guide{ display:flex; }
       <li><strong>「完了済み ○件」の区切りを押すと、完了した指摘をまとめて畳めます。</strong>
         件数はそのまま出ているので、消えたのではないことが分かります。もう一度押せば開きます
         （この設定はあなたの手元にだけ残り、書き出すファイルには入りません）</li>
+      <li><strong>AIが完了にしたものだけは、扱いが違います。</strong>あなたが押した完了はそのまま完了ですが、
+        AIが「直しました」と申告したものは、<strong>本当に本文が変わったかを機械で照合します</strong>。
+        確かめられなかったものには「未検算」の注意が出て、<strong>「確認済みにする」</strong>を押すまで残ります
+        （手順は「AIに直させて、完了を戻す」のページ）</li>
     </ul>
     <div class="cl-g-tip">
       <svg class="cl-i" data-s="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 17h2v-6h-2v6Zm1-8c.283 0 .52-.096.712-.288A.968.968 0 0 0 13 8a.968.968 0 0 0-.288-.712A.968.968 0 0 0 12 7a.968.968 0 0 0-.712.288A.968.968 0 0 0 11 8c0 .283.096.52.288.712.191.192.429.288.712.288Zm0 13a9.7 9.7 0 0 1-3.9-.79 10.1 10.1 0 0 1-5.31-5.31A9.7 9.7 0 0 1 2 12c0-1.39.26-2.69.79-3.9a10.1 10.1 0 0 1 5.31-5.31A9.7 9.7 0 0 1 12 2c1.39 0 2.69.26 3.9.79a10.1 10.1 0 0 1 5.31 5.31c.53 1.21.79 2.51.79 3.9s-.26 2.69-.79 3.9a10.1 10.1 0 0 1-5.31 5.31c-1.21.53-2.51.79-3.9.79Z"/></svg>
-      <div>完了は「消す」ではなく「片付ける」。何を直したかの記録がそのまま残るので、次の版で同じ指摘が出戻りません。</div>
+      <div>完了は「消す」ではなく「片付ける」。何を直したかの記録がそのまま残るので、次の版で同じ指摘が出戻りません。<br>
+        なお「未検算」は「直っていない」ではありません。<strong>機械が見ているのは「指摘した文章そのものが変わったか」だけ</strong>なので、
+        「この文の後に注記を足して」のように<strong>引用した文を変えずに直す指摘は、正しく直っていても未検算のまま残ります</strong>。
+        図やレイアウトへのピンは本文と照合できないので、つねに残ります。だから最後は人が見て「確認済み」を押します。</div>
     </div>
    </div>
 
@@ -1072,7 +1090,9 @@ html.cl-guide-open #cl-guide{ display:flex; }
         <kbd class="cl-k">Shift</kbd> + <kbd class="cl-k">S</kbd>）
         … <strong>全コメントを1つの文章にまとめてクリップボードへ写します。</strong>
         これをAIに貼って「反映して」と頼めば、資料をそのまま直させられます。Slackに貼って指摘を共有するのにも使えます。
-        <strong>完了した指摘は「対応済み・修正不要」と明記される</strong>ので、直した箇所を蒸し返しません</li>
+        <strong>完了した指摘には「対応済み・修正不要」と明記される</strong>ので、直した箇所を蒸し返しません
+        （AIが完了にしてまだ人が見ていないものは「人の確認待ち」と書かれ、これも触られません）。
+        <strong>直させたあと、完了の印を資料に戻す手順が次のページにあります</strong></li>
     </ul>
     <div class="cl-g-tip">
       <svg class="cl-i" data-s="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 17h2v-6h-2v6Zm1-8c.283 0 .52-.096.712-.288A.968.968 0 0 0 13 8a.968.968 0 0 0-.288-.712A.968.968 0 0 0 12 7a.968.968 0 0 0-.712.288A.968.968 0 0 0 11 8c0 .283.096.52.288.712.191.192.429.288.712.288Zm0 13a9.7 9.7 0 0 1-3.9-.79 10.1 10.1 0 0 1-5.31-5.31A9.7 9.7 0 0 1 2 12c0-1.39.26-2.69.79-3.9a10.1 10.1 0 0 1 5.31-5.31A9.7 9.7 0 0 1 12 2c1.39 0 2.69.26 3.9.79a10.1 10.1 0 0 1 5.31 5.31c.53 1.21.79 2.51.79 3.9s-.26 2.69-.79 3.9a10.1 10.1 0 0 1-5.31 5.31c-1.21.53-2.51.79-3.9.79Z"/></svg>
@@ -1080,7 +1100,75 @@ html.cl-guide-open #cl-guide{ display:flex; }
     </div>
    </div>
 
-   <!-- 9. ショートカット -->
+   <!-- 9. AIに直させて、完了を戻す。
+        ★このページを落とすと「コピーして貼るだけ」だと思われ、完了状態が一度も戻ってこない。
+          8ページ目の箇条書きに畳まないのは、往復が4手あってコマンドを1回挟むから -->
+   <div class="cl-g-step">
+    <svg class="cl-g-art" viewBox="0 0 430 132" role="img" aria-label="AIに直させ、review-state.json をコマンドで資料に流し込み、未検算として出たものを目で見て確認済みにする4つの手順">
+      <g font-family="system-ui,sans-serif" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">
+        <circle cx="56" cy="18" r="10" fill="#0017c1"/><text x="56" y="22">1</text>
+        <circle cx="158" cy="18" r="10" fill="#0017c1"/><text x="158" y="22">2</text>
+        <circle cx="260" cy="18" r="10" fill="#0017c1"/><text x="260" y="22">3</text>
+        <circle cx="362" cy="18" r="10" fill="#0017c1"/><text x="362" y="22">4</text>
+      </g>
+      <!-- 1. AIに貼って直させる -->
+      <rect x="14" y="40" width="84" height="48" rx="8" fill="#f2f2f2" stroke="#b3b3b3" stroke-width="2"/>
+      <text x="56" y="63" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" font-weight="700" fill="#4d4d4d">AI</text>
+      <text x="56" y="79" text-anchor="middle" font-family="system-ui,sans-serif" font-size="8" fill="#767676">指摘を貼る</text>
+      <!-- 2. review-state.json -->
+      <path d="M138 40 h28 l12 12 v36 h-40 z" fill="#fff" stroke="#0017c1" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M166 40 v12 h12" fill="none" stroke="#0017c1" stroke-width="2" stroke-linejoin="round"/>
+      <text x="158" y="78" text-anchor="middle" font-family="system-ui,sans-serif" font-size="8" font-weight="700" fill="#0017c1">JSON</text>
+      <!-- 3. コマンド -->
+      <rect x="214" y="40" width="78" height="48" rx="6" fill="#333333"/>
+      <g fill="#767676"><circle cx="224" cy="50" r="2.5"/><circle cx="233" cy="50" r="2.5"/><circle cx="242" cy="50" r="2.5"/></g>
+      <text x="222" y="72" font-family="ui-monospace,SFMono-Regular,monospace" font-size="9" fill="#ffffff">&gt;</text>
+      <rect x="232" y="65" width="48" height="4" rx="2" fill="#999999"/>
+      <rect x="232" y="75" width="32" height="4" rx="2" fill="#999999"/>
+      <!-- 4. 未検算 → 確認済み -->
+      <rect x="316" y="34" width="92" height="60" rx="8" fill="#fff" stroke="#e6e6e6" stroke-width="2"/>
+      <rect x="316" y="34" width="3" height="60" rx="1.5" fill="#008299"/>
+      <rect x="326" y="42" width="34" height="5" rx="2.5" fill="#cccccc"/>
+      <rect x="322" y="54" width="80" height="34" rx="4" fill="#ffeee2" stroke="#ffdfca" stroke-width="1"/>
+      <text x="328" y="66" font-family="system-ui,sans-serif" font-size="8" font-weight="700" fill="#c74700">未検算</text>
+      <rect x="327" y="72" width="70" height="11" rx="3" fill="#fff" stroke="#c74700" stroke-width="1"/>
+      <text x="362" y="80" text-anchor="middle" font-family="system-ui,sans-serif" font-size="7" fill="#c74700">確認済みにする</text>
+      <!-- つなぎの矢印 -->
+      <g stroke="#cccccc" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M102 64 h6"/><path d="M114 59 l6 5 -6 5"/>
+        <path d="M182 64 h6"/><path d="M194 59 l6 5 -6 5"/>
+        <path d="M296 64 h4"/><path d="M304 59 l6 5 -6 5"/>
+      </g>
+      <g font-family="system-ui,sans-serif" font-size="9" fill="#767676" text-anchor="middle">
+        <text x="56" y="112">直させる</text>
+        <text x="158" y="112">AIが出す</text>
+        <text x="260" y="112">流し込む</text>
+        <text x="362" y="112">目で見て確認</text>
+      </g>
+    </svg>
+    <div class="cl-g-h">AIに直させて、完了を戻す</div>
+    <p class="cl-g-lead">AIに貼って直させても、<strong>資料の側の指摘は「未完了」のまま</strong>です。
+    直したことを資料に書き戻すところまでで1往復。<strong>この4手をやらないと、完了の印が一度も戻ってきません。</strong></p>
+    <ol class="cl-g-flow">
+      <li><strong>「AIに渡す指摘をコピー」で写して、AIに貼る。</strong>「反映して」と頼めば本文を直してくれます</li>
+      <li><strong>AIが <span class="cl-g-mono">review-state.json</span> を出します。</strong>
+        コピーした文章の末尾に手順が入っているので、こちらから指示しなくても出てきます
+        （直した指摘のIDだけが並んだ、短いファイルです）</li>
+      <li><strong>そのファイルを資料に流し込みます。</strong>手元で1回だけコマンドを流してください
+        <div class="cl-g-cmd">python3 scripts/add_comment_layer.py 資料.html --apply-state review-state.json --in-place</div></li>
+      <li><strong>資料を開き直すと、AIが完了にしたものが「未検算」として出ます。</strong>
+        一覧の上に「AIが完了にした ○件が未検算です」が出るので押し、
+        本文が本当に直っているか目で見て<strong>「確認済みにする」</strong>を押します。全部押せば表示は消えます</li>
+    </ol>
+    <div class="cl-g-tip">
+      <svg class="cl-i" data-s="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 17h2v-6h-2v6Zm1-8c.283 0 .52-.096.712-.288A.968.968 0 0 0 13 8a.968.968 0 0 0-.288-.712A.968.968 0 0 0 12 7a.968.968 0 0 0-.712.288A.968.968 0 0 0 11 8c0 .283.096.52.288.712.191.192.429.288.712.288Zm0 13a9.7 9.7 0 0 1-3.9-.79 10.1 10.1 0 0 1-5.31-5.31A9.7 9.7 0 0 1 2 12c0-1.39.26-2.69.79-3.9a10.1 10.1 0 0 1 5.31-5.31A9.7 9.7 0 0 1 12 2c1.39 0 2.69.26 3.9.79a10.1 10.1 0 0 1 5.31 5.31c.53 1.21.79 2.51.79 3.9s-.26 2.69-.79 3.9a10.1 10.1 0 0 1-5.31 5.31c-1.21.53-2.51.79-3.9.79Z"/></svg>
+      <div>3のコマンドをはさむのは、<strong>AIにHTMLの中身を直接書き換えさせないため</strong>です。
+        コメントは資料のHTMLの中に埋め込まれているので、AIに触らせると書き損じでファイルごと壊れることがあります。
+        AIには「どれを直したか」だけを出させ、埋め込みへの書き込みはこのコマンドだけが行います。</div>
+    </div>
+   </div>
+
+   <!-- 10. ショートカット -->
    <div class="cl-g-step">
     <svg class="cl-g-art" viewBox="0 0 430 170" role="img" aria-label="キーボードショートカット">
       <rect x="30" y="14" width="370" height="146" rx="12" fill="#f2f2f2" stroke="#b3b3b3" stroke-width="2"/>
@@ -1134,6 +1222,9 @@ html.cl-guide-open #cl-guide{ display:flex; }
       <tr><td>カードのチェック</td><td>完了 / 完了の取り消し</td></tr>
       <tr><td>カードの「…」</td><td>編集 / 担当者を変更 / 削除 / 完了</td></tr>
       <tr><td>「完了済み ○件」の区切り</td><td>完了した指摘を畳む / 開く（件数は畳んでも出たまま）</td></tr>
+      <tr><td>「AIが完了にした ○件が未検算です」</td><td>まだ確認していないカードへ移動（完了を畳んでいても開き直します）</td></tr>
+      <tr><td>カードの「確認済みにする」</td><td>AIが完了にしたものを、自分の目で見て確認したことにする</td></tr>
+      <tr><td>一覧の上の「この版: …」</td><td>この資料が辿ってきた版の一覧を開く / 閉じる</td></tr>
       <tr><td>返信の「…」</td><td>編集 / 担当者を変更 / 削除</td></tr>
       <tr><td>名前の横のチップ</td><td>優先度を 必須 → 要望 → 軽微 → なし と切り替え</td></tr>
       <tr><td>ボタンにマウスを重ねる</td><td>そのボタンのショートカットが出ます</td></tr>
@@ -1157,6 +1248,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
       <button class="cl-g-dot" data-cl="guide-dot" data-i="6" aria-label="7ページ目"></button>
       <button class="cl-g-dot" data-cl="guide-dot" data-i="7" aria-label="8ページ目"></button>
       <button class="cl-g-dot" data-cl="guide-dot" data-i="8" aria-label="9ページ目"></button>
+      <button class="cl-g-dot" data-cl="guide-dot" data-i="9" aria-label="10ページ目"></button>
     </div>
     <div class="cl-g-nav">
       <button class="cl-btn cl-g-btn" data-type="outline" data-size="sm" id="cl-g-prev" data-cl="guide-prev" disabled>戻る</button>
