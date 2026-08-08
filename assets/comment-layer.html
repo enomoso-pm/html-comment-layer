@@ -1308,6 +1308,11 @@ html.cl-guide-open #cl-guide{ display:flex; }
   // 並び順は資料の中身ではなく「読み手の都合」なので、ファイルには焼かず localStorage に持つ。
   // 「完了を隠す」も同じ扱い（誰が読むかで変わる設定であって、資料の中身ではない）
   var sortMode = 'updated';
+  // 優先度順の並びを、セレクタを操作した瞬間の表示順で凍結する。null のときは凍結前
+  // （起動直後、まだ一度もセレクタを操作していない状態）で、そのときだけ従来どおり
+  // ラベルの現在値で並べる。凍結後にラベルを変えても、この配列を直すまで位置は動かない。
+  // ★保存しない（並び順設定と違い localStorage にも persist しない。ファイルには絶対に焼かない）
+  var sortSnapshot = null;
   var hideDone = false;
 
   var $ = function (s, r) { return (r || document).querySelector(s); };
@@ -1357,8 +1362,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
     if (ss) {
       ss.value = sortMode;
       ss.onchange = function (e) {
-        sortMode = e.target.value === 'priority' ? 'priority' : 'updated';
-        try { localStorage.setItem('cl-sort', sortMode); } catch (er) {}
+        applySortMode(e.target.value);
         render();
       };
     }
@@ -1710,31 +1714,63 @@ html.cl-guide-open #cl-guide{ display:flex; }
 
   /* ==========================================
      表示順
-     完了は削除もアーカイブもせず、常に最下部にまとめる。
+     完了は削除もアーカイブもせず、常に最下部にまとめる（isDone は常に生きた値で判定する）。
      未完了・完了それぞれの中では「更新順（最終更新が新しいものが上）」が既定で、
      重い指摘から片付けたいときのために「優先度順」へ切り替えられる。
      優先度順は 必須(must) → 要望(want) → 軽微(nit) → なし の順で、
      同じ優先度の中は更新順（新しいものが上）。読み手が次に触る順そのものになる。
      v2.4 までの「文書順」は、資料の登場順という並びが実際の作業順と結びつかず
      使われなかったので廃止した。
+     ★優先度順の並びは、セレクタを操作した瞬間だけ確定する（v2.15、sortSnapshot）。
+     チップで優先度を変えても、確定後は位置が動かない。詳細はその定義のコメントを参照。
      ========================================== */
   function priorityRank(c) {
     var i = LABELS.indexOf(labelOf(c));
     return i < 0 ? LABELS.length : i;     // ラベルなしは最後
   }
 
+  // 凍結前（sortSnapshot が無いとき）に使う、ラベルの現在値で並べる素の比較関数。
+  // セレクタで優先度順に切り替えた瞬間の並びを作るのにも使う（＝凍結の種）。
+  function livePriorityComparator(a, b) {
+    var da = isDone(a) ? 1 : 0, db = isDone(b) ? 1 : 0;
+    if (da !== db) return da - db;
+    if (sortMode === 'priority') {
+      var pa = priorityRank(a), pb = priorityRank(b);
+      if (pa !== pb) return pa - pb;
+    }
+    var sa = stamp(a), sb = stamp(b);
+    if (sa === sb) return 0;
+    return sa < sb ? 1 : -1;
+  }
+
   function orderedComments() {
-    return comments.slice().sort(function (a, b) {
-      var da = isDone(a) ? 1 : 0, db = isDone(b) ? 1 : 0;
-      if (da !== db) return da - db;
-      if (sortMode === 'priority') {
-        var pa = priorityRank(a), pb = priorityRank(b);
-        if (pa !== pb) return pa - pb;
-      }
-      var sa = stamp(a), sb = stamp(b);
-      if (sa === sb) return 0;
-      return sa < sb ? 1 : -1;
-    });
+    if (sortMode === 'priority' && sortSnapshot) {
+      return comments.slice().sort(function (a, b) {
+        var da = isDone(a) ? 1 : 0, db = isDone(b) ? 1 : 0;
+        if (da !== db) return da - db;
+        var ia = sortSnapshot.indexOf(a.id), ib = sortSnapshot.indexOf(b.id);
+        // スナップショットに無い id（凍結後に追加された新規コメント）は先頭に置く
+        if (ia === -1 && ib === -1) {
+          var sa = stamp(a), sb = stamp(b);
+          if (sa === sb) return 0;
+          return sa < sb ? 1 : -1;
+        }
+        if (ia === -1) return -1;
+        if (ib === -1) return 1;
+        return ia - ib;
+      });
+    }
+    return comments.slice().sort(livePriorityComparator);
+  }
+
+  // #cl-sort の実UIと、検証用の __commentLayer.setSort() の両方から呼ぶ単一入口。
+  // ★ここを分けると、テストからの切り替えだけ凍結が効かない、という食い違いが起きる。
+  function applySortMode(m) {
+    sortMode = m === 'priority' ? 'priority' : 'updated';
+    try { localStorage.setItem('cl-sort', sortMode); } catch (er) {}
+    sortSnapshot = sortMode === 'priority'
+      ? comments.slice().sort(livePriorityComparator).map(function (c) { return c.id; })
+      : null;
   }
 
   /* 「完了を隠す」が効いていても、いま手を入れている札だけは畳まない。
@@ -1858,6 +1894,9 @@ html.cl-guide-open #cl-guide{ display:flex; }
         comments.splice(di, 1);
         unwrap(document.querySelectorAll('.comment-highlight[data-id="' + action.id + '"]'));
         if (activeId === action.id) activeId = null;
+        // 優先度順の凍結スナップショットからも落とす。残すと「一度削除して同じidが
+        // 二度と来ない」前提が崩れるだけなので実害は薄いが、配列を無駄に太らせない
+        if (sortSnapshot) sortSnapshot = sortSnapshot.filter(function (id) { return id !== action.id; });
         break;
       }
       case 'pin-move': {
@@ -4024,11 +4063,12 @@ html.cl-guide-open #cl-guide{ display:flex; }
     setGuide: setGuide, guideGo: guideGo, guideNext: guideNext,
     get guideStep() { return guideStep; },
     setSort: function (m) {
-      sortMode = m === 'priority' ? 'priority' : 'updated';
+      applySortMode(m);
       var s = $('#cl-sort'); if (s) s.value = sortMode;
       render();
     },
     get sortMode() { return sortMode; },
+    get sortSnapshot() { return sortSnapshot ? sortSnapshot.slice() : null; },
     setHideDone: setHideDone,
     get hideDone() { return hideDone; },
     visibleComments: visibleComments,

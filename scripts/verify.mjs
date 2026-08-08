@@ -745,6 +745,36 @@ try {
   ok('優先度順でも完了は最下部にまとまり、廃止した「文書順」は指定しても無視される',
      r31.完了は最下部 && r31.docは無効, JSON.stringify(r31));
 
+  // 31b. 優先度順は「セレクタを操作した瞬間」の表示順で凍結される（v2.15）。
+  //      凍結後にチップで優先度を変えても位置は動かない。新規コメントは先頭に置く。
+  const r31b = JSON.parse(await b.evalJS(IDS + `
+    __commentLayer.setSort('updated');
+    __commentLayer.setSort('priority');           // ここで凍結される
+    const undone0 = ids().filter(id => !at(id).resolved);
+    const target = undone0[undone0.length - 1];   // 優先度を変えても動かないことを見る対象
+    const before = ids();
+    const labBefore = at(target).label || '';
+    __commentLayer.cycleLabel(target);             // 優先度が変わる（updatedAtは動かない）
+    const labAfter = at(target).label || '';
+    const afterLabelChange = ids();
+    __commentLayer.commit({ type: 'add', comment: { id: 'sort-frozen-new', type: 'text', text: '凍結後の新規',
+      author: 'seed', color: '#008299', quote: 'x', date: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z', resolved: false } });
+    const afterAdd = ids();
+    __commentLayer.commit({ type: 'delete', id: 'sort-frozen-new' });
+    __commentLayer.setSort('updated');
+    return JSON.stringify({
+      ラベルが変わった: labBefore !== labAfter,
+      優先度を変えても位置が同じ: JSON.stringify(before) === JSON.stringify(afterLabelChange),
+      新規は先頭: afterAdd[0] === 'sort-frozen-new',
+      件数が1増えた: afterAdd.length === before.length + 1
+    });
+  `));
+  ok('優先度順のとき、優先度を変えてもカードの位置が動かない（並び替えはセレクタ操作時だけ）',
+     r31b.ラベルが変わった && r31b.優先度を変えても位置が同じ, JSON.stringify(r31b));
+  ok('凍結後に追加した新規コメントは先頭に置かれる',
+     r31b.新規は先頭 && r31b.件数が1増えた, JSON.stringify(r31b));
+
   // 32. 指摘コピー：完了・ラベル・返信が明示され、書き出しJSONにも完了状態が残る
   const r32 = JSON.parse(await b.evalJS(`
     const labOf = id => __commentLayer.comments.filter(x => x.id === id)[0].label || '';
