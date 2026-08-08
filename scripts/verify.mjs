@@ -802,6 +802,52 @@ try {
   ok('凍結後に追加した新規コメントは先頭に置かれる',
      r31b.新規は先頭 && r31b.件数が1増えた, JSON.stringify(r31b));
 
+  // 31d. 「優先度順」を選んだまま、いまの並びで凍結し直せる（v2.15.0）。
+  //      ネイティブ select は同じ値を選び直しても change が発火しない。mousedown で
+  //      selectedIndex を外して発火させる案を一度入れたが、ブラウザが表示を先頭の
+  //      選択肢（更新順）に倒してしまい「いま何が選ばれているか」を誤って示す事故に
+  //      なった（実利用で発見）。select 自体はいじらず、隣の
+  //      [data-cl="sort-refresh"] ボタンに操作を分離した
+  const r31d = JSON.parse(await b.evalJS(IDS + `
+    __commentLayer.setSort('updated');
+    __commentLayer.setSort('priority');
+    const ss = document.getElementById('cl-sort');
+    const 更新前の表示 = ss.value;
+    const target = ids().filter(id => !at(id).resolved).slice(-1)[0];
+    const before = ids();
+    for (let i = 0; i < 4 && at(target).label !== 'must'; i++) __commentLayer.cycleLabel(target);
+    const afterLabelChange = ids();
+    document.querySelector('[data-cl="sort-refresh"]').click();
+    const afterRefresh = ids();
+    const 更新後の表示 = ss.value;
+    __commentLayer.setSort('updated');
+    return JSON.stringify({
+      表示は最初から優先度順: 更新前の表示 === 'priority',
+      ラベルはmustになった: at(target).label === 'must',
+      更新前は凍結のまま動かない: JSON.stringify(before) === JSON.stringify(afterLabelChange),
+      更新すると先頭へ動く: afterRefresh[0] === target,
+      更新前後で並びが変わった: JSON.stringify(afterLabelChange) !== JSON.stringify(afterRefresh),
+      表示は更新後も優先度順のまま: 更新後の表示 === 'priority'
+    });
+  `));
+  ok('優先度順のまま更新ボタンを押すと、選択表示を保ったままいまのラベルで並びが更新される',
+     r31d.表示は最初から優先度順 && r31d.ラベルはmustになった && r31d.更新前は凍結のまま動かない
+       && r31d.更新すると先頭へ動く && r31d.更新前後で並びが変わった && r31d.表示は更新後も優先度順のまま,
+     JSON.stringify(r31d));
+
+  // 31e. 更新順のときに押しても表示は崩れない（同じボタンが両方の並び順に効く）
+  const r31e = JSON.parse(await b.evalJS(`
+    __commentLayer.setSort('updated');
+    const ss = document.getElementById('cl-sort');
+    document.querySelector('[data-cl="sort-refresh"]').click();
+    return JSON.stringify({
+      表示は更新順のまま: ss.value === 'updated',
+      モードは更新順のまま: __commentLayer.sortMode === 'updated'
+    });
+  `));
+  ok('更新順のときに更新ボタンを押しても表示・モードは更新順のまま変わらない',
+     r31e.表示は更新順のまま && r31e.モードは更新順のまま, JSON.stringify(r31e));
+
   // 32. 指摘コピー：完了・ラベル・返信が明示され、書き出しJSONにも完了状態が残る
   const r32 = JSON.parse(await b.evalJS(`
     const labOf = id => __commentLayer.comments.filter(x => x.id === id)[0].label || '';
@@ -2537,6 +2583,57 @@ print(json.dumps({
   const errs46 = b.events.filter(e => e.method === 'Runtime.exceptionThrown');
   ok('v2.14 のテスト中もJSエラーが出ない', errs46.length === 0,
      errs46.map(e => e.params.exceptionDetails.text).join(' / '));
+
+  // 31c. 優先度順の凍結は、開き直した直後から効いている（v2.15の回帰）。
+  //      boot() は localStorage から sortMode を復元するだけで applySortMode() を
+  //      呼んでいなかったため、開き直した直後は sortSnapshot が無く、優先度を
+  //      変えるとその場で並びが動いてしまっていた（凍結の意味が無くなる）。
+  //      31b は同一セッション内の setSort() 経由だけを見ていたので、ここでは
+  //      「ファイルを保存して閉じ、同じファイルをもう一度開く」を実際にやる
+  const tmpSort = pathm.join(osm.tmpdir(), 'cl-sortfreeze-' + Date.now().toString(36) + '.html');
+  fsm.copyFileSync(ABS, tmpSort);
+  tmpGens.push(tmpSort);
+  await goto('file://' + encodeURI(tmpSort));
+  const seed31c = JSON.parse(await b.evalJS(IDS + `
+    const mk = (id, label) => {
+      const n = ids().length + 1;
+      __commentLayer.commit({ type: 'add', comment: { id, type: 'text', text: id,
+        author: 'seed', color: '#0084A3', quote: 'x',
+        date: '2026-01-0' + n + 'T00:00:00.000Z', updatedAt: '2026-01-0' + n + 'T00:00:00.000Z',
+        resolved: false } });
+      for (let i = 0; i < 5 && (at(id).label || '') !== label; i++) __commentLayer.cycleLabel(id);
+    };
+    mk('sf-a', 'nit'); mk('sf-b', 'want'); mk('sf-c', 'must');
+    __commentLayer.setSort('priority');
+    return JSON.stringify({ order: ids() });
+  `));
+  ok('凍結の種になる優先度順（必須→要望→軽微）が正しく作れている',
+     JSON.stringify(seed31c.order) === JSON.stringify(['sf-c', 'sf-b', 'sf-a']), JSON.stringify(seed31c));
+  const exported31c = await b.evalJS(`
+    let cap = null; const o = URL.createObjectURL; URL.createObjectURL = x => { cap = x; return 'blob:t'; };
+    const k = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () {};
+    __commentLayer.exportHTML();
+    URL.createObjectURL = o; HTMLAnchorElement.prototype.click = k;
+    return cap.text();`);
+  fsm.writeFileSync(tmpSort, exported31c);
+  await goto('file://' + encodeURI(tmpSort));   // 同じパスを開き直す＝localStorageのcl-sortが効く
+  const reopened31c = JSON.parse(await b.evalJS(IDS + `
+    const beforeChange = ids();
+    const hasSnapshot = __commentLayer.sortSnapshot !== null;
+    const target = beforeChange[beforeChange.length - 1];     // いちばん下（sf-a・軽微）のはず
+    for (let i = 0; i < 2; i++) __commentLayer.cycleLabel(target);   // 軽微→なし→必須（本来なら先頭へ跳ねる変化）
+    const afterChange = ids();
+    return JSON.stringify({
+      sortMode: __commentLayer.sortMode,
+      hasSnapshot,
+      ラベルは必須になった: at(target).label === 'must',
+      順序が同じ: JSON.stringify(beforeChange) === JSON.stringify(afterChange)
+    });
+  `));
+  ok('優先度順の凍結は、ファイルを開き直した直後から効いている（boot()でapplySortMode()を呼ぶ）',
+     reopened31c.sortMode === 'priority' && reopened31c.hasSnapshot
+       && reopened31c.ラベルは必須になった && reopened31c.順序が同じ,
+     JSON.stringify(reopened31c));
 
 } catch (e) {
   fail++; console.log('❌ 実行エラー: ' + e.message);

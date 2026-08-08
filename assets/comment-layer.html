@@ -1,5 +1,5 @@
 <!-- ===================================================================
-     COMMENT-LAYER v2.14.2 : START
+     COMMENT-LAYER v2.15.0 : START
      HTML資料にレビューコメント機能を後付けするドロップイン・ブロック。
      この START 〜 END までを丸ごと差し替えればバージョンアップできる。
      資料側に必要な条件：
@@ -265,6 +265,7 @@ html.cl-open #cl-sidebar{ display:flex; }
 .cl-listbar{ display:flex; align-items:center; justify-content:space-between; gap:8px;
   padding:8px 16px; border-bottom:1px solid var(--cl-border); background:var(--cl-white); flex:0 0 auto; }
 .cl-listbar-count{ font-size:12.5px; color:var(--cl-mid); }
+.cl-sortbar{ display:flex; align-items:center; gap:2px; }
 .cl-sortwrap{ display:flex; align-items:center; gap:5px; color:var(--cl-gray-600); }
 #cl-sort{ font:400 12.5px/1.5 var(--cl-font); letter-spacing:.02em; padding:4px 6px;
   border:1px solid var(--cl-gray-400); border-radius:6px; background:var(--cl-white);
@@ -572,13 +573,20 @@ html.cl-guide-open #cl-guide{ display:flex; }
 
   <div class="cl-listbar">
     <span class="cl-listbar-count" id="cl-count"></span>
-    <label class="cl-sortwrap">
-      <svg class="cl-i" data-s="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18v-2h6v2H3Zm0-5v-2h12v2H3Zm0-5V6h18v2H3Z"/></svg>
-      <select id="cl-sort" aria-label="並び順（完了は常に最下部）">
-        <option value="updated">更新順</option>
-        <option value="priority">優先度順</option>
-      </select>
-    </label>
+    <div class="cl-sortbar">
+      <label class="cl-sortwrap">
+        <svg class="cl-i" data-s="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18v-2h6v2H3Zm0-5v-2h12v2H3Zm0-5V6h18v2H3Z"/></svg>
+        <select id="cl-sort" aria-label="並び順（完了は常に最下部）">
+          <option value="updated">更新順</option>
+          <option value="priority">優先度順</option>
+        </select>
+      </label>
+      <button class="cl-iconbtn" style="width:24px;height:24px" data-cl="sort-refresh"
+        data-cl-tip="いまの状態で並び直す" data-cl-tipdown
+        aria-label="いまの並び順で並びを更新する（優先度順ならいまのラベルで凍結し直す）">
+        <svg class="cl-i" data-s="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35Z"/></svg>
+      </button>
+    </div>
   </div>
 
   <!-- AI完了の検算。完了を畳んでいても見えるように一覧の外（上）に出す。
@@ -690,8 +698,8 @@ html.cl-guide-open #cl-guide{ display:flex; }
       <rect x="14" y="16" width="402" height="168" rx="11" fill="#fff" stroke="#cccccc" stroke-width="2"/>
       <text x="34" y="42" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#666666">操作中のユーザー</text>
       <rect x="34" y="50" width="150" height="32" rx="8" fill="#fff" stroke="#0017c1" stroke-width="2"/>
-      <circle cx="50" cy="66" r="6" fill="#008299"/>
-      <text x="64" y="70" font-family="system-ui,sans-serif" font-size="12" font-weight="700" fill="#1a1a1a">レビュアー1</text>
+      <circle cx="50" cy="66" r="6" fill="#0084A3"/>
+      <text x="64" y="70" font-family="system-ui,sans-serif" font-size="12" font-weight="700" fill="#1a1a1a">無記名</text>
       <path d="M166 63 l5 5 5 -5" fill="none" stroke="#666666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       <rect x="192" y="50" width="106" height="32" rx="8" fill="#fff" stroke="#0017c1" stroke-width="1.5"/>
       <text x="245" y="70" text-anchor="middle" font-family="system-ui,sans-serif" font-size="11" font-weight="700" fill="#0017c1">ユーザーを管理</text>
@@ -701,7 +709,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
       <path d="M57 111 l4 4" stroke="#767676" stroke-width="1.5" stroke-linecap="round"/>
       <text x="66" y="112" font-family="system-ui,sans-serif" font-size="9" fill="#999999">名前で絞り込む</text>
       <rect x="40" y="124" width="138" height="18" rx="5" fill="#d9e6ff"/>
-      <circle cx="52" cy="133" r="5" fill="#008299"/><text x="64" y="137" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#00118f">レビュアー1</text>
+      <circle cx="52" cy="133" r="5" fill="#0084A3"/><text x="64" y="137" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#00118f">無記名</text>
       <circle cx="52" cy="152" r="5" fill="#c74700"/><text x="64" y="156" font-family="system-ui,sans-serif" font-size="10" fill="#4d4d4d">デザイン</text>
       <circle cx="52" cy="169" r="5" fill="#5c10be"/><text x="64" y="173" font-family="system-ui,sans-serif" font-size="10" fill="#4d4d4d">開発</text>
       <g fill="none" stroke="#0017c1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -781,19 +789,19 @@ html.cl-guide-open #cl-guide{ display:flex; }
       <rect x="42" y="62" width="222" height="98" rx="8" fill="#f2f2f2" stroke="#e6e6e6" stroke-width="2"/>
       <rect x="66" y="112" width="26" height="34" rx="3" fill="#cccccc"/>
       <rect x="102" y="92" width="26" height="54" rx="3" fill="#cccccc"/>
-      <rect x="138" y="76" width="26" height="70" rx="3" fill="#008299" fill-opacity=".55"/>
+      <rect x="138" y="76" width="26" height="70" rx="3" fill="#0084A3" fill-opacity=".55"/>
       <rect x="174" y="100" width="26" height="46" rx="3" fill="#cccccc"/>
       <text x="56" y="156" font-family="system-ui,sans-serif" font-size="10" fill="#767676">図・グラフ・レイアウト</text>
       <path d="M151 46 v14 M144 53 h14" stroke="#0017c1" stroke-width="2" stroke-linecap="round"/>
       <g>
-        <circle cx="151" cy="76" r="15" fill="#008299" stroke="#fff" stroke-width="3"/>
-        <text x="151" y="81" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" font-weight="700" fill="#fff">レ</text>
-        <path d="M151 91 l0 8" stroke="#008299" stroke-width="2" stroke-linecap="round"/>
+        <circle cx="151" cy="76" r="15" fill="#0084A3" stroke="#fff" stroke-width="3"/>
+        <text x="151" y="81" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" font-weight="700" fill="#fff">無</text>
+        <path d="M151 91 l0 8" stroke="#0084A3" stroke-width="2" stroke-linecap="round"/>
       </g>
       <path d="M276 104 h24" stroke="#0017c1" stroke-width="2" stroke-dasharray="4 4" stroke-linecap="round"/>
       <path d="M296 99 l6 5 -6 5" fill="none" stroke="#0017c1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       <rect x="310" y="76" width="90" height="56" rx="8" fill="#fff" stroke="#e6e6e6" stroke-width="2"/>
-      <rect x="310" y="76" width="4" height="56" rx="2" fill="#008299"/>
+      <rect x="310" y="76" width="4" height="56" rx="2" fill="#0084A3"/>
       <g transform="translate(320,86) scale(0.5)" fill="#767676">
         <path d="M12 12c.55 0 1.02-.196 1.412-.587C13.804 11.02 14 10.55 14 10s-.196-1.02-.588-1.412A1.926 1.926 0 0 0 12 8c-.55 0-1.02.196-1.412.588A1.926 1.926 0 0 0 10 10c0 .55.196 1.02.588 1.413.391.391.862.587 1.412.587Zm0 10c-2.683-2.283-4.687-4.404-6.012-6.363C4.663 13.679 4 11.867 4 10.2c0-2.5.804-4.492 2.413-5.975C8.02 2.742 9.883 2 12 2s3.98.742 5.588 2.225C19.196 5.708 20 7.7 20 10.2c0 1.667-.663 3.479-1.988 5.437C16.688 17.596 14.683 19.717 12 22Z"/>
       </g>
@@ -823,8 +831,8 @@ html.cl-guide-open #cl-guide{ display:flex; }
    <div class="cl-g-step">
     <svg class="cl-g-art" viewBox="0 0 430 200" role="img" aria-label="完了にするとカードが一覧の一番下へ移る。編集と削除は3点リーダーにまとまっている">
       <rect x="86" y="10" width="206" height="60" rx="8" fill="#fff" stroke="#e6e6e6" stroke-width="2"/>
-      <rect x="86" y="10" width="4" height="60" rx="2" fill="#008299"/>
-      <circle cx="104" cy="27" r="5" fill="#008299"/>
+      <rect x="86" y="10" width="4" height="60" rx="2" fill="#0084A3"/>
+      <circle cx="104" cy="27" r="5" fill="#0084A3"/>
       <rect x="114" y="23" width="36" height="8" rx="4" fill="#cccccc"/>
       <rect x="158" y="21" width="34" height="12" rx="4" fill="#ffdada"/>
       <text x="175" y="30" text-anchor="middle" font-family="system-ui,sans-serif" font-size="8" font-weight="700" fill="#a90000">必須</text>
@@ -853,11 +861,11 @@ html.cl-guide-open #cl-guide{ display:flex; }
       </g>
       <g opacity=".6">
         <rect x="64" y="146" width="192" height="44" rx="8" fill="#f2f2f2" stroke="#e6e6e6" stroke-width="2"/>
-        <rect x="64" y="146" width="4" height="44" rx="2" fill="#008299"/>
-        <circle cx="82" cy="160" r="5" fill="#008299"/>
+        <rect x="64" y="146" width="4" height="44" rx="2" fill="#0084A3"/>
+        <circle cx="82" cy="160" r="5" fill="#0084A3"/>
         <rect x="92" y="156" width="36" height="8" rx="4" fill="#cccccc"/>
         <rect x="78" y="171" width="120" height="5" rx="2.5" fill="#e6e6e6"/>
-        <text x="78" y="187" font-family="system-ui,sans-serif" font-size="8" font-weight="700" fill="#197a4b">完了（レビュアー1）</text>
+        <text x="78" y="187" font-family="system-ui,sans-serif" font-size="8" font-weight="700" fill="#197a4b">完了（無記名）</text>
       </g>
     </svg>
     <div class="cl-g-h">片付いた指摘は「完了」にする</div>
@@ -890,9 +898,9 @@ html.cl-guide-open #cl-guide{ display:flex; }
    <div class="cl-g-step">
     <svg class="cl-g-art" viewBox="0 0 430 200" role="img" aria-label="コメントに返信を積み、優先度を付ける">
       <rect x="76" y="14" width="278" height="172" rx="9" fill="#fff" stroke="#e6e6e6" stroke-width="2"/>
-      <rect x="76" y="14" width="5" height="172" rx="2.5" fill="#008299"/>
-      <circle cx="98" cy="36" r="5" fill="#008299"/>
-      <text x="110" y="40" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#333333">レビュアー1</text>
+      <rect x="76" y="14" width="5" height="172" rx="2.5" fill="#0084A3"/>
+      <circle cx="98" cy="36" r="5" fill="#0084A3"/>
+      <text x="110" y="40" font-family="system-ui,sans-serif" font-size="10" font-weight="700" fill="#333333">無記名</text>
       <g>
         <rect x="172" y="28" width="34" height="14" rx="4" fill="#ffdada"/>
         <text x="189" y="38" text-anchor="middle" font-family="system-ui,sans-serif" font-size="8" font-weight="700" fill="#a90000">必須</text>
@@ -1157,7 +1165,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
 (function () {
   'use strict';
   if (window.__commentLayer) return;
-  var VERSION = '2.14.2';
+  var VERSION = '2.15.0';
 
   var comments = [], users = [], pinMode = false, draft = null, dirty = false, activeId = null, booted = false;
   // 版の系譜（comment-meta）。ファイル往復は本質的に分岐するので、分岐を防ぐのではなく
@@ -1235,9 +1243,17 @@ html.cl-guide-open #cl-guide{ display:flex; }
       if (sm === 'priority' || sm === 'updated') sortMode = sm;
       hideDone = localStorage.getItem('cl-hide-done') === '1';
     } catch (e) {}
+    // 復元した sortMode にも凍結を効かせる。ここを呼ばないと、優先度順のまま
+    // 開き直した直後は sortSnapshot が無く、素の比較関数に戻ってしまう（v2.15の回帰）
+    applySortMode(sortMode);
     var ss = $('#cl-sort');
     if (ss) {
       ss.value = sortMode;
+      // ★ select はここに書いた以外を一切いじらない。mousedown で selectedIndex を
+      //   外して「同じ値の選び直し」に change を発火させようとしたことがあったが、
+      //   ネイティブ select はいったん選択を外すと表示が先頭の選択肢（更新順）に
+      //   倒れてしまい、いま何が選ばれているかを誤って示す事故になった（v2.15.0）。
+      //   「同じ並び順を選び直す」は #cl-sort-refresh（隣のボタン）に分離してある
       ss.onchange = function (e) {
         applySortMode(e.target.value);
         render();
@@ -1560,10 +1576,15 @@ html.cl-guide-open #cl-guide{ display:flex; }
 
   function orderedComments() {
     if (sortMode === 'priority' && sortSnapshot) {
+      // id→順位は先に引いておく。比較関数の中で indexOf() を呼ぶと
+      // 件数が増えたときに O(n² log n) になる（anchorsForAll() で避けた形と逆向き）
+      var rank = {};
+      for (var i = 0; i < sortSnapshot.length; i++) rank[sortSnapshot[i]] = i;
       return comments.slice().sort(function (a, b) {
         var da = isDone(a) ? 1 : 0, db = isDone(b) ? 1 : 0;
         if (da !== db) return da - db;
-        var ia = sortSnapshot.indexOf(a.id), ib = sortSnapshot.indexOf(b.id);
+        var ia = rank.hasOwnProperty(a.id) ? rank[a.id] : -1;
+        var ib = rank.hasOwnProperty(b.id) ? rank[b.id] : -1;
         // スナップショットに無い id（凍結後に追加された新規コメント）は先頭に置く
         if (ia === -1 && ib === -1) {
           var sa = stamp(a), sb = stamp(b);
@@ -3752,6 +3773,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
     var KEEP_MENU = { 'menu': 1, 'reply-menu': 1, 'assign': 1, 'menu-back': 1 };
     if (!KEEP_MENU[a]) closeMenu(true);
     if (a === 'close') setSidebar(false);
+    else if (a === 'sort-refresh') { applySortMode(sortMode); render(); }
     else if (a === 'toggle-sidebar') setSidebar(!root.classList.contains('cl-open'));
     else if (a === 'pinmode') setPinMode(!pinMode);
     else if (a === 'master') setMaster();
@@ -3902,4 +3924,4 @@ html.cl-guide-open #cl-guide{ display:flex; }
   };
 })();
 </script>
-<!-- ===== COMMENT-LAYER v2.14.2 : END ===== -->
+<!-- ===== COMMENT-LAYER v2.15.0 : END ===== -->
