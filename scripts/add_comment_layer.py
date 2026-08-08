@@ -605,6 +605,13 @@ def main():
             if not state.exists():
                 sys.exit("状態ファイルが見つかりません: %s" % state)
             block = apply_state(block, state)
+            # ★系譜の目的は「この版で何が起きたか」なので、AIの書き戻しはいちばん残したい op。
+            #   これが無いと、ふつうの --in-place と区別が付かない。
+            #   ただし op は1つしか持てないので、上書きするのは単独指定のときだけにする。
+            #   --carry-from（資料を丸ごと差し替えた）と --merge（2本を合流させた）は、
+            #   版の系譜としてはこちらのほうが情報量が大きいので譲らない
+            if not args.carry_from and not args.merge:
+                meta_op = "apply-state"
         block = replace_store(block, "comment-meta",
                               dump_store(bump_meta(base_meta, meta_op, doc_title(html))))
         if found:

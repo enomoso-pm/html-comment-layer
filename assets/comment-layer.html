@@ -911,17 +911,16 @@ html.cl-guide-open #cl-guide{ display:flex; }
       <li><strong>「完了済み ○件」の区切りを押すと、完了した指摘をまとめて畳めます。</strong>
         件数はそのまま出ているので、消えたのではないことが分かります。もう一度押せば開きます
         （この設定はあなたの手元にだけ残り、書き出すファイルには入りません）</li>
-      <li><strong>AIが完了にしたものだけは、扱いが違います。</strong>あなたが押した完了はそのまま完了ですが、
-        AIが「直しました」と申告したものは、<strong>本当に本文が変わったかを機械で照合します</strong>。
-        確かめられなかったものには「未検算」の注意が出て、<strong>「確認済みにする」</strong>を押すまで残ります
-        （手順は「AIに直させて、完了を戻す」のページ）</li>
+      <li><strong>AIが完了にしたものだけは、扱いが違います。</strong>本当に本文が変わったかを機械で照合し、
+        確かめられなかったものには「未検算」の注意が出ます。<strong>あなたが「確認済みにする」を押すまで残ります</strong>
+        （資料を作った人向けの手順は「AIに直させて、完了を戻す」のページ）</li>
+      <li><strong>「未検算」は「直っていない」ではなく、「機械では確かめられなかった」です。</strong>
+        照合できるのは<strong>指摘した文章そのものが変わったか</strong>だけ。注記を足すような修正や、
+        図・レイアウトへのピンは、正しく直っていても未検算のまま残ります</li>
     </ul>
     <div class="cl-g-tip">
       <svg class="cl-i" data-s="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 17h2v-6h-2v6Zm1-8c.283 0 .52-.096.712-.288A.968.968 0 0 0 13 8a.968.968 0 0 0-.288-.712A.968.968 0 0 0 12 7a.968.968 0 0 0-.712.288A.968.968 0 0 0 11 8c0 .283.096.52.288.712.191.192.429.288.712.288Zm0 13a9.7 9.7 0 0 1-3.9-.79 10.1 10.1 0 0 1-5.31-5.31A9.7 9.7 0 0 1 2 12c0-1.39.26-2.69.79-3.9a10.1 10.1 0 0 1 5.31-5.31A9.7 9.7 0 0 1 12 2c1.39 0 2.69.26 3.9.79a10.1 10.1 0 0 1 5.31 5.31c.53 1.21.79 2.51.79 3.9s-.26 2.69-.79 3.9a10.1 10.1 0 0 1-5.31 5.31c-1.21.53-2.51.79-3.9.79Z"/></svg>
-      <div>完了は「消す」ではなく「片付ける」。何を直したかの記録がそのまま残るので、次の版で同じ指摘が出戻りません。<br>
-        なお「未検算」は「直っていない」ではありません。<strong>機械が見ているのは「指摘した文章そのものが変わったか」だけ</strong>なので、
-        「この文の後に注記を足して」のように<strong>引用した文を変えずに直す指摘は、正しく直っていても未検算のまま残ります</strong>。
-        図やレイアウトへのピンは本文と照合できないので、つねに残ります。だから最後は人が見て「確認済み」を押します。</div>
+      <div>完了は「消す」ではなく「片付ける」。何を直したかの記録がそのまま残るので、次の版で同じ指摘が出戻りません。</div>
     </div>
    </div>
 
@@ -1099,7 +1098,8 @@ html.cl-guide-open #cl-guide{ display:flex; }
         これをAIに貼って「反映して」と頼めば、資料をそのまま直させられます。Slackに貼って指摘を共有するのにも使えます。
         <strong>完了した指摘には「対応済み・修正不要」と明記される</strong>ので、直した箇所を蒸し返しません
         （AIが完了にしてまだ人が見ていないものは「人の確認待ち」と書かれ、これも触られません）。
-        <strong>直させたあと、完了の印を資料に戻す手順が次のページにあります</strong></li>
+        <strong>直させたあと、完了の印を資料に戻す手順は次のページ</strong>（<strong>資料を作った人向け</strong>。
+        コメントを書いて返す方は、このページまでで完結します）</li>
     </ul>
     <div class="cl-g-tip">
       <svg class="cl-i" data-s="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 17h2v-6h-2v6Zm1-8c.283 0 .52-.096.712-.288A.968.968 0 0 0 13 8a.968.968 0 0 0-.288-.712A.968.968 0 0 0 12 7a.968.968 0 0 0-.712.288A.968.968 0 0 0 11 8c0 .283.096.52.288.712.191.192.429.288.712.288Zm0 13a9.7 9.7 0 0 1-3.9-.79 10.1 10.1 0 0 1-5.31-5.31A9.7 9.7 0 0 1 2 12c0-1.39.26-2.69.79-3.9a10.1 10.1 0 0 1 5.31-5.31A9.7 9.7 0 0 1 12 2c1.39 0 2.69.26 3.9.79a10.1 10.1 0 0 1 5.31 5.31c.53 1.21.79 2.51.79 3.9s-.26 2.69-.79 3.9a10.1 10.1 0 0 1-5.31 5.31c-1.21.53-2.51.79-3.9.79Z"/></svg>
@@ -1139,7 +1139,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
       <rect x="322" y="54" width="80" height="34" rx="4" fill="#ffeee2" stroke="#ffdfca" stroke-width="1"/>
       <text x="328" y="66" font-family="system-ui,sans-serif" font-size="8" font-weight="700" fill="#c74700">未検算</text>
       <rect x="327" y="72" width="70" height="11" rx="3" fill="#fff" stroke="#c74700" stroke-width="1"/>
-      <text x="362" y="80" text-anchor="middle" font-family="system-ui,sans-serif" font-size="7" fill="#c74700">確認済みにする</text>
+      <text x="362" y="80" text-anchor="middle" font-family="system-ui,sans-serif" font-size="8" fill="#c74700">確認済みにする</text>
       <!-- つなぎの矢印 -->
       <g stroke="#cccccc" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
         <path d="M102 64 h6"/><path d="M114 59 l6 5 -6 5"/>
@@ -1154,6 +1154,8 @@ html.cl-guide-open #cl-guide{ display:flex; }
       </g>
     </svg>
     <div class="cl-g-h">AIに直させて、完了を戻す</div>
+    <p class="cl-g-lead"><strong>このページは、資料を作った人（レビューを集める側）の手順です。</strong>
+    コメントを書いて返す方は、前のページまでで完結します。</p>
     <p class="cl-g-lead">AIに貼って直させても、<strong>資料の側の指摘は「未完了」のまま</strong>です。
     直したことを資料に書き戻すところまでで1往復。<strong>この4手をやらないと、完了の印が一度も戻ってきません。</strong></p>
     <ol class="cl-g-flow">
@@ -1161,7 +1163,8 @@ html.cl-guide-open #cl-guide{ display:flex; }
       <li><strong>AIが <span class="cl-g-mono">review-state.json</span> を出します。</strong>
         コピーした文章の末尾に手順が入っているので、こちらから指示しなくても出てきます
         （直した指摘のIDだけが並んだ、短いファイルです）</li>
-      <li><strong>そのファイルを資料に流し込みます。</strong>手元で1回だけコマンドを流してください
+      <li><strong>そのファイルを資料に流し込みます。</strong>
+        <strong>このレイヤーのフォルダ（<span class="cl-g-mono">scripts</span> があるところ）で</strong>、1回だけコマンドを流してください
         <div class="cl-g-cmd"><span>python3</span> <span>scripts/add_comment_layer.py</span> <span>資料.html</span> <span>--apply-state</span> <span>review-state.json</span> <span>--in-place</span></div></li>
       <li><strong>資料を開き直すと、AIが完了にしたものが「未検算」として出ます。</strong>
         一覧の上に「AIが完了にした ○件が未検算です」が出るので押し、
@@ -1491,11 +1494,13 @@ html.cl-guide-open #cl-guide{ display:flex; }
      ★保存トーストには足さない。あれは「保存先はこのPCの中だけ、そのファイルを送り返して」
        という、いちばん落としたくない念押しを担っている。並べると両方読まれない。 */
   var OP_JA = { inject: '作成', save: '保存', merge: '合流', carry: '引き継ぎ',
-                'in-place': '更新', update: '更新', ack: '確認' };
+                'in-place': '更新', update: '更新', ack: '確認',
+                'apply-state': 'AIの完了を反映' };
   // 派生元をどう名乗るか。★op を見ないと、CLIが作った版まで「名前未設定の人が保存」になる。
   // ブラウザ保存（save）のときだけ人の名前を出す。それ以外は人が保存したわけではない
   var OP_ORIGIN = { inject: 'コマンドで作成', 'in-place': 'コマンドで更新',
-                    update: 'コマンドで更新', carry: 'コマンドで引き継ぎ', merge: 'コマンドで合流' };
+                    update: 'コマンドで更新', carry: 'コマンドで引き継ぎ', merge: 'コマンドで合流',
+                    'apply-state': 'コマンドでAIの完了を反映' };
   function originOf(prev) {
     if (!prev) return '前の版から派生';
     if (prev.op && prev.op !== 'save') return OP_ORIGIN[prev.op] || ('コマンドで' + prev.op);

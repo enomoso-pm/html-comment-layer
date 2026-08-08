@@ -31,7 +31,7 @@ UIは**デジタル庁デザインシステム（DADS）**に準拠し、絵文�
 - `scripts/` — 実行スクリプト
   - `add_comment_layer.py` … 資料への追加／更新／除去／合流／AI完了の書き戻し
   - `verify.mjs` … ヘッドレスChromeでの動作確認（161項目）
-  - `verify_cli.py` … `add_comment_layer.py` 側の動作確認（44項目・Chrome不要）
+  - `verify_cli.py` … `add_comment_layer.py` 側の動作確認（45項目・Chrome不要）
   - `cdp.mjs` … `verify.mjs` が使うChrome操作ドライバ（依存ゼロ）
 
 ## 最短の使い方
@@ -80,7 +80,7 @@ rm -f ../../サンプル/*.bak
 # 3) 検証（v2.14.0 から3本。ブラウザ側2本＋CLI側1本）
 node    scripts/verify.mjs    ../../サンプル/demo-要件レビュー_commented.html  # 161項目・60〜90秒
 node    scripts/verify.mjs    ../../サンプル/楽天サンプル_commented.html       # 161項目・60〜90秒
-python3 scripts/verify_cli.py ../../サンプル/demo-要件レビュー_確認用.html     #  44項目・数秒
+python3 scripts/verify_cli.py ../../サンプル/demo-要件レビュー_確認用.html     #  45項目・数秒
 ```
 
 **★資料の割り当てを間違えないこと。**

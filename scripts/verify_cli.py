@@ -111,6 +111,11 @@ def main():
                after[d].get("resolvedBy") == before_done[d].get("resolvedBy"))
         ok("--apply-state 後は unverified が消えている",
            "unverified" not in store(base, "comment-meta"))
+        # ★系譜に「AIの書き戻し」として残ること。ふつうの --in-place と区別が付かないと、
+        #   版を辿ったときに「この版で何が起きたか」が分からなくなる
+        ok("lineage に apply-state が積まれる（in-place と区別できる）",
+           (store(base, "comment-meta").get("lineage") or [{}])[-1].get("op") == "apply-state",
+           (store(base, "comment-meta").get("lineage") or [{}])[-1])
 
         snapshot = json.dumps(store(base), ensure_ascii=False, sort_keys=True)
         code, out = run(base, "--apply-state", state, "--in-place")
