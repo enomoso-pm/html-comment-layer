@@ -1,5 +1,5 @@
 <!-- ===================================================================
-     COMMENT-LAYER v2.12.0 : START
+     COMMENT-LAYER v2.13.0 : START
      HTML資料にレビューコメント機能を後付けするドロップイン・ブロック。
      この START 〜 END までを丸ごと差し替えればバージョンアップできる。
      資料側に必要な条件：
@@ -1134,7 +1134,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
 (function () {
   'use strict';
   if (window.__commentLayer) return;
-  var VERSION = '2.12.0';
+  var VERSION = '2.13.0';
 
   var comments = [], users = [], pinMode = false, draft = null, dirty = false, activeId = null, booted = false;
   var activeUserId = null, toastTimer = null;
@@ -1239,6 +1239,14 @@ html.cl-guide-open #cl-guide{ display:flex; }
     pinBox.id = 'cl-pins';
     host.appendChild(pinBox);
 
+    // 比率で持つピンは、host の寸法が変わるたびに置き直す必要がある。
+    // resize / load / サイドバー開閉を個別に拾うより、host そのものを見張るほうが漏れない
+    // （画像の遅延読み込み、Webフォント、資料側スクリプトの後出しなども全部ここに来る）。
+    // ピンは height:0 の絶対配置の器の中なのでレイアウトに影響せず、ループしない
+    if (window.ResizeObserver) {
+      try { new ResizeObserver(repositionPins).observe(host); } catch (e) {}
+    }
+
     renderUsers();
     initUserCombo();
     initMasterFilter();
@@ -1285,46 +1293,74 @@ html.cl-guide-open #cl-guide{ display:flex; }
   function repliesOf(c) { return Array.isArray(c && c.replies) ? c.replies : []; }
 
   /* ==========================================
-     ピンの横位置は「host 幅に対する比率（xr）」で持つ
+     ピンの座標は「host に対する比率」で持つ（xr / yr）
      v2.11 まではピン座標を host 左上からの絶対pxで保存していたので、
-     相手のウィンドウ幅や表示倍率が違うとピンが本文からずれた。
-     横（x）だけを比率にする。実害の大半は横方向で、縦は幅が変わると本文が
-     折り返し直る＝総高さ自体が変わるため、比率にしてもむしろ悪化する。
-     互換のため x は消さず、xr が無い旧データは従来どおり x で描く。
-     読み込み時に x から xr を逆算してはいけない（そのときの幅で焼き付き、
+     相手のウィンドウ幅が違うとピンが本文からずれた。
+     互換のため x / y は消さず、比率が無い旧データは従来どおり px で描く。
+     読み込み時に px から比率を逆算してはいけない（そのときの寸法で焼き付き、
      別の環境で開くと余計にずれる）。
 
      測る相手は host ではなく、器の #cl-pins（host の padding ボックスの左上に置いた
-     width:100% の箱）。pin.style.left はこの箱の左端からのpxなので、
+     width:100% の箱）。pin.style.left / top はこの箱の左上からのpxなので、
      測るのも器でなければ辻褄が合わない。host の getBoundingClientRect() は
      border ボックスなので、host に枠線があると原点も幅もずれる。
      実際 v2.11 は、刺すときが host の border ボックス基準・ドラッグ後の保存が
      pin.style.left（＝padding ボックス基準）で、作成とドラッグの基準が食い違っていた。
+     縦の span は器の高さ（0px）ではなく host の padding ボックス高さ（clientHeight）。
+
+     ★ 縦（yr）は「幅が変わったときだけ」使う ―― 幅ごと保存する理由
+     縦がずれる原因は、幅が変わって本文の折り返しが変わり、下の内容が押し下げられること。
+     実測では、総高さに対する比率で持つと悪条件で誤差が 1793px → 70px（25分の1）になる。
+     ただし比率は「幅は同じまま本文が編集された」場合には不利で、
+     たとえば末尾に1章足されただけでも、上のほうのピンまで比例して下がってしまう。
+     そこで刺したときの host 幅（hw）も一緒に保存し、
+       ・いまの幅が hw と同じ → y（px）をそのまま使う（＝v2.11 と同じ挙動。編集に強い）
+       ・幅が違う            → yr × いまの高さ（＝折り返しの変化に追従）
+     と使い分ける。幅が変わらない限り従来と1pxも変わらないので、退行しない。
      ========================================== */
   function pinSpace() {
     var el = pinBox || host;
-    if (!el) return { left: 0, top: 0, width: 1 };
+    if (!el || !host) return { left: 0, top: 0, width: 1, height: 1 };
     var r = el.getBoundingClientRect();
-    return { left: r.left, top: r.top, width: r.width > 0 ? r.width : 1 };
+    // 縦の基準は host の padding ボックス高さ。原点（器の上端）と同じ箱で測る
+    var h = host.clientHeight || host.getBoundingClientRect().height;
+    return { left: r.left, top: r.top,
+             width: r.width > 0 ? r.width : 1, height: h > 0 ? h : 1 };
   }
   function hostWidth() { return pinSpace().width; }
+  function hostHeight() { return pinSpace().height; }
   // 比率は6桁で丸める。書き出したJSONを人が差分で読むので、意味のない桁は落とす
-  function toRatio(px, w) { return Math.round((px / w) * 1e6) / 1e6; }
+  function toRatio(px, span) { return Math.round((px / span) * 1e6) / 1e6; }
   function hasRatio(c) { return c && c.xr != null && isFinite(c.xr); }
+  function hasYRatio(c) { return c && c.yr != null && isFinite(c.yr); }
+  // 刺したときの幅と、いまの幅が同じか（1px の丸め差は同じとみなす）
+  function sameWidthAsPlaced(c) {
+    return c && c.hw != null && isFinite(c.hw) && Math.abs(hostWidth() - c.hw) <= 1;
+  }
   function pinLeft(c) { return hasRatio(c) ? c.xr * hostWidth() : (c && c.x) || 0; }
-  // 幅が変わったら、比率を持つピンだけ置き直す。旧データ（xrなし）は動かさない
+  function pinTop(c) {
+    if (hasYRatio(c) && !sameWidthAsPlaced(c)) return c.yr * hostHeight();
+    return (c && c.y) || 0;
+  }
+  // 寸法が変わったら、比率を持つピンを置き直す。旧データ（比率なし）は動かさない
   function repositionPins() {
-    if (!pinBox) return;
-    var w = hostWidth();
+    // 書き出し中は器を一時的に外している。外れた器を測ると全部0になり、
+    // ピンが左上へ寄ってしまうので、繋がっているときだけ触る
+    if (!pinBox || !pinBox.isConnected) return;
     Array.prototype.slice.call(pinBox.querySelectorAll('.comment-pin')).forEach(function (el) {
       var id = el.getAttribute('data-id');
       // 保存前の下書きピンも一緒に動かす。ここを落とすと、入力中に幅が変わったときだけ
       // 下書きのピンが取り残される
       var c = (draft && draft.id === id) ? draft : byId(id);
-      if (hasRatio(c)) el.style.left = (c.xr * w) + 'px';
+      if (!c) return;
+      if (hasRatio(c)) el.style.left = pinLeft(c) + 'px';
+      if (hasYRatio(c)) el.style.top = pinTop(c) + 'px';
     });
   }
   window.addEventListener('resize', repositionPins);
+  // 画像やWebフォントが後から効いて総高さが変わることがある。
+  // 起動時（DOMContentLoaded）の高さで比率を戻すと、そのぶんピンが上にずれたままになる
+  window.addEventListener('load', repositionPins);
   // 並び替えの基準時刻。旧形式（updatedAt なし）は date にフォールバックする
   function stamp(c) { return c.updatedAt || c.date || ''; }
   function labelOf(c) { return LABELS.indexOf(c && c.label) >= 0 ? c.label : ''; }
@@ -1502,8 +1538,11 @@ html.cl-guide-open #cl-guide{ display:flex; }
         if (!pm) return;
         pm.x = action.x;
         pm.y = action.y;
-        // 比率もここで更新する。忘れると、動かした瞬間に旧方式（絶対px）へ戻る
+        // 比率もここで更新する。忘れると、動かした瞬間に旧方式（絶対px）へ戻る。
+        // hw も「いま置き直した幅」に更新する（この幅では y が正）
         pm.xr = toRatio(action.x, hostWidth());
+        pm.yr = toRatio(action.y, hostHeight());
+        pm.hw = Math.round(hostWidth());
         break;
       }
       case 'restore':
@@ -1791,8 +1830,11 @@ html.cl-guide-open #cl-guide{ display:flex; }
      指摘のMarkdown化とコピー（AI修正への受け渡し用）
      exportHTML とは独立。押してもコメントデータと未保存フラグには触れない。
      ========================================== */
+  // 渡す y は「いま描かれているピンの位置」（＝pinTop）。保存値の c.y をそのまま渡すと、
+  // 幅が変わって比率で描き直されている場合に、別の見出しを拾う。
+  // 基準は器の上端（＝ピンの座標系）にそろえる。host の矩形だと枠線ぶんずれる
   function nearestHeadingText(y) {
-    var hostTop = host.getBoundingClientRect().top;
+    var hostTop = pinSpace().top;
     var bestText = '', bestTop = -Infinity;
     var hs = host.querySelectorAll('h1, h2, h3');
     for (var i = 0; i < hs.length; i++) {
@@ -1821,7 +1863,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
         ? '状態: 完了（' + (c.resolvedBy || '担当者不明') + (fmtFull(c.resolvedAt) ? '、' + fmtFull(c.resolvedAt) : '') + '）※対応済み。修正不要'
         : '状態: 未対応');
       if (c.type === 'pin') {
-        var near = nearestHeadingText(c.y || 0);
+        var near = nearestHeadingText(pinTop(c));
         out.push('対象: 図・画面上の位置への指摘（ピン）' + (near ? '。最寄りの見出し: 「' + near + '」' : ''));
       } else {
         var lost = !document.querySelector('.comment-highlight[data-id="' + c.id + '"]');
@@ -2590,11 +2632,13 @@ html.cl-guide-open #cl-guide{ display:flex; }
     // 測るのはピンの器（＝pin.style.left の座標系そのもの）。host の矩形で測ると、
     // host に枠線があるぶんだけ原点がずれ、ドラッグで保存する値と食い違う
     var sp = pinSpace();
-    // 比率は「クリックした瞬間の幅」で取る。openForDraft() がサイドバーを開くと
+    // 比率は「クリックした瞬間の寸法」で取る。openForDraft() がサイドバーを開くと
     // 幅いっぱいの資料では host が細くなるので、保存時に測り直すと別の位置になる
-    var dx = e.clientX - sp.left;
+    var dx = e.clientX - sp.left, dy = e.clientY - sp.top;
     draft = { type: 'pin', id: 'pin-' + Date.now().toString(36),
-              x: dx, y: e.clientY - sp.top, xr: toRatio(dx, sp.width) };
+              x: dx, y: dy,
+              xr: toRatio(dx, sp.width), yr: toRatio(dy, sp.height),
+              hw: Math.round(sp.width) };
     openForDraft();
   });
 
@@ -2740,10 +2784,13 @@ html.cl-guide-open #cl-guide{ display:flex; }
         var ctx = captureContext(draft.id);
         if (ctx) { c.prefix = ctx.prefix; c.suffix = ctx.suffix; }
       }
-      // ピンは絶対pxと比率の両方を書く。xr が本命で、x は旧版のレイヤーで開いたとき用の控え
+      // ピンは絶対pxと比率の両方を書く。比率が本命で、x / y は旧版のレイヤーで
+      // 開いたとき用の控え。hw は「幅が変わったか」の判定に使う（pinTop 参照）
       if (draft.type === 'pin') {
         c.x = draft.x; c.y = draft.y;
         c.xr = draft.xr != null ? draft.xr : toRatio(draft.x, hostWidth());
+        c.yr = draft.yr != null ? draft.yr : toRatio(draft.y, hostHeight());
+        c.hw = draft.hw != null ? draft.hw : Math.round(hostWidth());
       }
       action = { type: 'add', comment: c };
     }
@@ -2875,7 +2922,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
 
     // ピンは絶対座標なので、一覧の並び順とは無関係にまとめて描く
     comments.forEach(function (c) {
-      if (c.type === 'pin') drawPin(c.id, pinLeft(c), c.y, safeColor(c.color), c.author, false);
+      if (c.type === 'pin') drawPin(c.id, pinLeft(c), pinTop(c), safeColor(c.color), c.author, false);
     });
     if (draft && draft.type === 'pin') {
       var u = currentUser();
@@ -3245,7 +3292,11 @@ html.cl-guide-open #cl-guide{ display:flex; }
         if (draft && draft.id === id) {
           // ドラフトはまだ comments に入っていないので、単一入口の対象外。
           // 比率も一緒に更新する（保存前に動かしたぶんが落ちないように）
-          draft.x = nx; draft.y = ny; draft.xr = toRatio(nx, hostWidth()); dirty = true;
+          draft.x = nx; draft.y = ny;
+          draft.xr = toRatio(nx, hostWidth());
+          draft.yr = toRatio(ny, hostHeight());
+          draft.hw = Math.round(hostWidth());
+          dirty = true;
         } else {
           commit({ type: 'pin-move', id: id, x: nx, y: ny });
         }
@@ -3501,7 +3552,10 @@ html.cl-guide-open #cl-guide{ display:flex; }
     visibleComments: visibleComments,
     // ピンの比率化の検証用。幅を変えて left が追従するかを、本体と同じ式で突き合わせる
     _hostWidth: function () { return hostWidth(); },
+    _hostHeight: function () { return hostHeight(); },
     _pinLeft: function (id) { return pinLeft(byId(id)); },
+    _pinTop: function (id) { return pinTop(byId(id)); },
+    _sameWidthAsPlaced: function (id) { return sameWidthAsPlaced(byId(id)); },
     _repositionPins: function () { repositionPins(); },
     _guideFocusables: function () { return guideFocusables(); },
     // 検証用。レイヤーが「資料の本文」と見なしているテキストそのもの。
@@ -3513,4 +3567,4 @@ html.cl-guide-open #cl-guide{ display:flex; }
   };
 })();
 </script>
-<!-- ===== COMMENT-LAYER v2.12.0 : END ===== -->
+<!-- ===== COMMENT-LAYER v2.13.0 : END ===== -->

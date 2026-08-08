@@ -1635,6 +1635,128 @@ padding:40px 32px 400px;font-family:system-ui,sans-serif;line-height:1.9}</style
        `作成 ${r43e.作成のx} → ドラッグ後 ${r43e.ドラッグ後のx}（+50 のはず）`);
   }
 
+  // ===== 縦（yr）: 幅が変わると本文の折り返しが変わり、下の内容が押し下げられる。
+  //      絶対pxのピンは下へ行くほど本文から離れる。総高さに対する比率なら追従する。
+  //      ただし「幅は同じまま本文が編集された」場合は比率のほうが不利なので、
+  //      刺したときの幅（hw）と同じ間は px を使う。両方まとめてここで見る
+  {
+    const para = (i) => `<p>段落${i}。受付から審査までの所要日数は、現行の運用で平均四営業日となっている。` +
+      `連携は日次のファイルで行い、結果は担当者へメールで共有する想定である。` +
+      `移行判定の基準は、並行稼働の二週目までに差分がゼロになっていることとする。</p>`;
+    const before = Array.from({ length: 30 }, (_, i) => para(i + 1)).join('\n');
+    const after = Array.from({ length: 15 }, (_, i) => para(i + 31)).join('\n');
+    const TALL = mkDoc('tall', `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>幅可変の長い資料</title>
+<style>body{margin:0;padding:40px 4% 300px;font-family:system-ui,sans-serif;line-height:1.9;font-size:16px}
+h1{font-size:26px}p{margin:0 0 18px}#cl-mark{background:#ffe}</style>
+</head><body>
+<h1>幅可変の長い資料</h1>
+${before}
+<p id="cl-mark">目印の段落。ここにピンを刺し、幅を変えたあとも同じ段落を指しているかを見る。</p>
+${after}
+</body></html>`);
+
+    await b.setViewport(1440, 900);
+    await goto('file://' + encodeURI(TALL));
+    // 目印の段落の先頭にピンを刺す。サイドバーは先に開いておく（刺した直後に開くと
+    // 本文が細くなって、比率で持っているぶん一緒に動くのが混ざるため）
+    const y1 = JSON.parse(await b.evalJS(`
+      __commentLayer.setSidebar(true);
+      __commentLayer.setPinMode(true);
+      const rel = el => Math.round(el.getBoundingClientRect().top
+        - document.getElementById('cl-pins').getBoundingClientRect().top);
+      const mark = document.getElementById('cl-mark');
+      const mr = mark.getBoundingClientRect();
+      const x = Math.round(mr.left + 40), y = Math.round(mr.top + 4);
+      (document.elementFromPoint(x, y) || mark).dispatchEvent(
+        new MouseEvent('mousedown', { clientX: x, clientY: y, bubbles: true, cancelable: true }));
+      document.getElementById('cl-draft-text').value = '目印の段落へのピン';
+      __commentLayer.saveDraft();
+      const c = __commentLayer.comments[__commentLayer.comments.length - 1];
+      // yr / hw を持たない旧データも並べる。こちらは幅を変えても動いてはいけない
+      __commentLayer.commit({ type:'add', comment:{ id:'pin-oldy', type:'pin', text:'旧データのピン',
+        author:'旧', color:'#008299', date:'2026-01-01T00:00:00.000Z',
+        updatedAt:'2026-01-01T00:00:00.000Z', resolved:false, x:100, y:c.y } });
+      return JSON.stringify({ id: c.id, y: c.y, yr: c.yr, hw: c.hw,
+        hostW: Math.round(__commentLayer._hostWidth()), hostH: Math.round(__commentLayer._hostHeight()),
+        markTop: rel(mark), pinTop: Math.round(__commentLayer._pinTop(c.id)),
+        旧pinTop: Math.round(__commentLayer._pinTop('pin-oldy')) });
+    `));
+    ok('ピンの縦位置も比率（yr）と、刺したときの幅（hw）を持って保存される',
+       y1.yr > 0 && y1.yr < 1 && y1.hw === y1.hostW
+         && Math.abs(y1.yr - y1.y / y1.hostH) < 1e-5 && Math.abs(y1.pinTop - (y1.markTop + 4)) <= 2,
+       `y=${y1.y} yr=${y1.yr} hw=${y1.hw} 目印=${y1.markTop}`);
+
+    // ★ 幅が同じまま本文が伸びた（＝編集された）場合は比率を使わない。
+    //   使ってしまうと、末尾に1章足しただけで上のほうのピンまで比例して下がる。
+    //   刺した幅のままここで見る（幅を変えたあとに見ると、当然 hw と違うので意味がない）
+    const y3 = JSON.parse(await b.evalJS(`
+      const host = document.querySelector('[data-cl-host]');
+      const before = Math.round(__commentLayer._pinTop('${y1.id}'));
+      const h0 = Math.round(__commentLayer._hostHeight());
+      const pad = document.createElement('div');
+      pad.style.height = '900px';
+      host.appendChild(pad);                       // 末尾に1章ぶん足したのと同じ状態
+      const after = Math.round(__commentLayer._pinTop('${y1.id}'));
+      const 描画 = Math.round(parseFloat(document.querySelector('.comment-pin[data-id="${y1.id}"]').style.top));
+      const h1 = Math.round(__commentLayer._hostHeight());
+      const 同じ幅 = __commentLayer._sameWidthAsPlaced('${y1.id}');
+      pad.remove();
+      return JSON.stringify({ before, after, 描画, h0, h1, 同じ幅 });
+    `));
+    ok('幅が同じままなら、本文が伸びてもピンは動かない（編集に強い）',
+       y3.h1 - y3.h0 >= 800 && y3.同じ幅 === true && y3.before === y3.after && y3.描画 === y3.before,
+       `総高さ ${y3.h0}→${y3.h1}px でもピンは ${y3.before}px のまま（同じ幅=${y3.同じ幅}）`);
+
+    // 幅を縮めて本文を折り返し直させる
+    await b.setViewport(1000, 900);
+    await b.wait(450);
+    const y2 = JSON.parse(await b.evalJS(`
+      const rel = el => Math.round(el.getBoundingClientRect().top
+        - document.getElementById('cl-pins').getBoundingClientRect().top);
+      const mark = document.getElementById('cl-mark');
+      const el = document.querySelector('.comment-pin[data-id="${y1.id}"]');
+      return JSON.stringify({
+        hostW: Math.round(__commentLayer._hostWidth()), hostH: Math.round(__commentLayer._hostHeight()),
+        markTop: rel(mark),
+        pinTop: Math.round(__commentLayer._pinTop('${y1.id}')),
+        描画のtop: Math.round(parseFloat(el.style.top)),
+        旧pinTop: Math.round(__commentLayer._pinTop('pin-oldy')),
+        保存値y: __commentLayer.comments.filter(c => c.id === '${y1.id}')[0].y });
+    `));
+    const 目標 = y2.markTop + 4;
+    const 新誤差 = Math.abs(y2.pinTop - 目標);
+    const 旧誤差 = Math.abs(y1.y - 目標);              // 絶対pxのままだった場合の誤差
+    ok('幅が変わって本文が流れても、ピンが目印の段落を指し続ける',
+       旧誤差 > 200 && 新誤差 < 旧誤差 / 5 && 新誤差 < 120 && y2.描画のtop === y2.pinTop,
+       `本文が ${y1.hostH}px→${y2.hostH}px に伸び、目印は ${y1.markTop}px→${y2.markTop}px へ。` +
+       `ずれ: 絶対pxなら ${旧誤差}px → 比率なら ${新誤差}px`);
+    ok('yr を持たない旧データは、幅が変わっても動かない',
+       y2.旧pinTop === y1.旧pinTop, `${y1.旧pinTop} → ${y2.旧pinTop}`);
+
+    // 書き出して別の幅で開き直しても、比率と hw が生きている
+    const outY = await b.evalJS(`
+      let cap = null; const o = URL.createObjectURL; URL.createObjectURL = x => { cap = x; return 'blob:t'; };
+      const k = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () {};
+      __commentLayer.exportHTML();
+      URL.createObjectURL = o; HTMLAnchorElement.prototype.click = k;
+      return cap.text();`);
+    const TALL2 = pathm.join(osm.tmpdir(), 'cl-tall2-' + Date.now().toString(36) + '.html');
+    fsm.writeFileSync(TALL2, outY); tmpGens.push(TALL2);
+    await b.setViewport(1240, 900);
+    await goto('file://' + encodeURI(TALL2));
+    const y4 = JSON.parse(await b.evalJS(`
+      const rel = el => Math.round(el.getBoundingClientRect().top
+        - document.getElementById('cl-pins').getBoundingClientRect().top);
+      const c = __commentLayer.comments.filter(x => x.id === '${y1.id}')[0];
+      return JSON.stringify({ yr: c.yr, hw: c.hw, markTop: rel(document.getElementById('cl-mark')),
+        pinTop: Math.round(__commentLayer._pinTop('${y1.id}')),
+        hostW: Math.round(__commentLayer._hostWidth()) });
+    `));
+    ok('保存して別の幅で開き直しても、縦位置が目印を指したままになる',
+       y4.yr === y1.yr && y4.hw === y1.hw && Math.abs(y4.pinTop - (y4.markTop + 4)) < 120,
+       `幅 ${y4.hostW}px / 目印 ${y4.markTop}px / ピン ${y4.pinTop}px（差 ${Math.abs(y4.pinTop - (y4.markTop + 4))}px）`);
+  }
+
   await goto('file://' + encodeURI(FLUID2));
   await b.clearViewport();
   await b.wait(200);
