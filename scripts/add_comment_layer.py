@@ -516,6 +516,10 @@ def main():
         if not found:
             sys.exit("レイヤーが見つかりません。")
         new = (html[:found[0]] + html[found[1]:]).replace("\n\n\n", "\n\n")
+        # v2.14.1 より前に保存されたファイルは data-cl-host が host 要素に焼き込まれたままで、
+        # ブロック自体の外にあるためレイヤー除去では消えない（ピンモードの十字カーソルが
+        # 無関係な要素に残る）。--strip では実行時の印として一緒に落とす
+        new = re.sub(r'\s+data-cl-host(="[^"]*")?', "", new)
     else:
         block = ASSET.read_text(encoding="utf-8").rstrip("\n")
         # 版の系譜の起点。既存レイヤーがあればその meta を引き継ぐ（無ければ新規注入）。
