@@ -1986,8 +1986,12 @@ html.cl-guide-open #cl-guide{ display:flex; }
     comments.forEach(function (c) { have[c.id] = true; });
     var candidates = ((data && data.comments) || []).filter(function (c) { return c && c.id && !have[c.id]; });
     if (!candidates.length) { clearBackup(); return; }
-    var ok = confirm('前回の未保存コメントが ' + candidates.length + ' 件あります。復元しますか？\n（キャンセルすると破棄されます）');
-    if (!ok) { clearBackup(); return; }
+    // ★キャンセルしても退避は消さない。取り返しのつかない操作としては軽すぎるうえ、
+    //   削除は確認する・完了は取り消せるという他の設計と整合しない。次に開いたら
+    //   また同じ提案が出るだけで、破棄は「復元を承諾」「退避の中身がもう全部ファイル側にある」
+    //   「退避が壊れて読めない」の3つのときだけ行う
+    var ok = confirm('前回の未保存コメントが ' + candidates.length + ' 件あります。復元しますか？');
+    if (!ok) return;
     // 本文が退避時と同一ならオフセットで正確に貼る。書き換わっていたら、誤った位置に
     // 貼る危険があるのでオフセットは捨て、引用照合（一意のときだけ）に切り替える。
     // それでも特定できなければ、コメント本文は救い、位置は警告表示に任せる
@@ -2370,8 +2374,10 @@ html.cl-guide-open #cl-guide{ display:flex; }
     if (!u) return;
     var n = userContributionCount(u);
     if (n > 0) {
+      // ★段落の区切り（\n\n）だけ残し、文中の \n は入れない。confirm() は幅に合わせて
+      //   自動で折り返すので、手で入れた改行と二重になると変な位置で折れる
       var ok = confirm('「' + u.name + '」さんは、すでに ' + n + ' 件のコメント・返信を書いています。\n\n' +
-        '削除しても書き込みは資料に残りますが、一覧からこの人がいなくなるため、\n' +
+        '削除しても書き込みは資料に残りますが、一覧からこの人がいなくなるため、' +
         '以後この名前でコメントを書くことも、名前や色をまとめて直すこともできなくなります。\n\n' +
         '削除しますか？');
       if (!ok) return;

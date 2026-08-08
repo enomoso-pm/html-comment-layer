@@ -336,6 +336,33 @@ try {
   ok('別ファイル名で開いても復元提案が出ない', !dlg19);
   try { fsm.unlinkSync(tmpCopy); } catch {}
 
+  // 19b. 復元提案をキャンセルしても退避は破棄されない（v2.15、offerRestore）。
+  //      次に開いたときも同じ提案が出て、承諾すれば戻ることを確認する
+  const tmpCancel = pathm.join(osm.tmpdir(), 'cl-restorecancel-' + Date.now().toString(36) + '.html');
+  fsm.copyFileSync(ABS, tmpCancel);
+  await goto('file://' + encodeURI(tmpCancel));
+  await b.evalJS(PAGE_HELPERS + `
+    const q = __vt.uniq(12, []);
+    __vt.mk(q, 'キャンセル退避テスト');
+    return 1;
+  `);
+  b.dialog.log.length = 0;
+  b.dialog.action = { accept: false };
+  await goto('file://' + encodeURI(tmpCancel));
+  const dlg19b1 = b.dialog.log.some(d => (d.message || '').includes('復元しますか'));
+  b.dialog.log.length = 0;
+  b.dialog.action = { accept: true };
+  await goto('file://' + encodeURI(tmpCancel));
+  const dlg19b2 = b.dialog.log.some(d => (d.message || '').includes('復元しますか'));
+  const r19b = JSON.parse(await b.evalJS(`
+    return JSON.stringify({ 戻った: __commentLayer.comments.some(c => c.text === 'キャンセル退避テスト') });
+  `));
+  ok('復元提案をキャンセルしても退避は破棄されず、次に開いたときも同じ提案が出る',
+     dlg19b1 && dlg19b2 && r19b.戻った,
+     `1回目=${dlg19b1} 2回目=${dlg19b2} 復元=${r19b.戻った}`);
+  try { fsm.unlinkSync(tmpCancel); } catch {}
+  b.dialog.action = { accept: true };
+
   // 20. ダウンロード後は提案が出ない
   b.dialog.log.length = 0;
   await goto(URL0);                     // ここで出る復元提案は自動承諾される
