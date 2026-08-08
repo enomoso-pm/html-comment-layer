@@ -290,7 +290,13 @@ try {
     __commentLayer.setPinMode(true);
     const hr = host.getBoundingClientRect();
     const x = Math.round(hr.left + Math.min(220, hr.width / 3));
-    const y = Math.round(Math.max(80, Math.min(innerHeight - 80, hr.top + 300)));
+    // ★ピンを刺す点は「host の見えている範囲」から採る。
+    //   以前は max(80, min(innerHeight-80, hr.top+300)) だったが、host がページ最上部から
+    //   始まる資料でスクロールしていると hr.top が大きな負になり、下限の 80 に丸められる。
+    //   y=80 は画面最上部＝レイヤー自身のトースト（#cl-toast）が出る場所なので、
+    //   クリックがトーストに当たり、レイヤーは「本文の外」と正しく判断してピンを作らない。
+    //   テストはそのあと下書き欄を触って null 参照で落ちていた（実測: hit=DIV#cl-toast.show）。
+    const y = Math.round((Math.max(0, hr.top) + Math.min(innerHeight, hr.bottom)) / 2);
     (document.elementFromPoint(x, y) || host).dispatchEvent(new MouseEvent('mousedown', { clientX: x, clientY: y, bubbles: true, cancelable: true }));
     document.getElementById('cl-draft-text').value = '退避ピンのテスト';
     __commentLayer.saveDraft();
@@ -798,11 +804,15 @@ try {
     document.dispatchEvent(new KeyboardEvent('keydown', { key:'Escape', bubbles:true, cancelable:true }));
     const Escで閉じる = !open();
     // ガイドの文言が本文テキストとして拾われていないか（拾うと引用照合・退避が壊れる）。
-    // 判定はレイヤー本体が「資料の本文」と見なしているテキストそのもので行う
-    const raw = __commentLayer._streamText();
+    // ★文言の部分一致で見ない。以前は 'ショートカット一覧' 等を探していたが、
+    //   このレイヤー自身を説明する資料は本文に同じ語を普通に書くので誤検知する
+    //   （実測: レビュー依頼のブリーフが「10ページ目のショートカット一覧は…」で引っかかった）。
+    //   ノードの帰属を直接見れば、資料の中身に一切左右されない。
+    const guide = document.getElementById('cl-guide');
+    const 本文に混入しない = !__commentLayer._streamTextNodes().some(n => guide.contains(n));
     return JSON.stringify({ 初期は閉じている, 押すと開く, 総ページ数, ドット数, 戻るが無効, 次へで進む,
       矢印で進む, 矢印で戻る, ドットで飛ぶ, 最後は閉じるボタン, ショートカット遮断, 最後で閉じる, Escで閉じる,
-      本文に混入しない: raw.indexOf('ショートカット一覧') < 0 && raw.indexOf('この資料は、そのまま書き込めます') < 0 });
+      本文に混入しない });
   `));
   ok('使い方ガイドは押したときだけ開き、ページ送り・ドット・Escが効く',
      r33.初期は閉じている && r33.押すと開く && r33.総ページ数 === r33.ドット数 && r33.戻るが無効
