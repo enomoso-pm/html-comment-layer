@@ -11,3 +11,6 @@ HANDOVER.md
 *_merged.html
 *.bak
 __pycache__/
+
+# examples/ は記事のデモ一式なので、中間ファイルの除外から外して追跡する
+!examples/*.html
