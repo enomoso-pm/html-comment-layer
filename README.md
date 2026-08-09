@@ -33,8 +33,7 @@ UIは**デジタル庁デザインシステム（DADS）**に準拠し、絵文�
   - `verify.mjs` … ヘッドレスChromeでの動作確認
   - `verify_cli.py` … `add_comment_layer.py` 側の動作確認（Chrome不要）
   - `cdp.mjs` … `verify.mjs` が使うChrome操作ドライバ（依存ゼロ）
-- `examples/` — 紹介記事のデモ一式（レビュー済み資料・AI書き戻し後・合流結果・`review-state.json`）。
-  触ってみる順番は `examples/README.md` に
+- `examples/` — 紹介記事のデモ（レビュー済みの資料1本）。試し方は `examples/README.md` に
 
 ## 最短の使い方
 

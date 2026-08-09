@@ -2287,7 +2287,7 @@
 </div>
 
 <!-- ===================================================================
-     COMMENT-LAYER v2.15.1 : START
+     COMMENT-LAYER v2.15.2 : START
      HTML資料にレビューコメント機能を後付けするドロップイン・ブロック。
      この START 〜 END までを丸ごと差し替えればバージョンアップできる。
      資料側に必要な条件：
@@ -2298,7 +2298,7 @@
 
 <script id="user-master" type="application/json">[{"id":"u-sato","name":"佐藤（営業統括）","color":"#a90000"},{"id":"u-yama","name":"山本（技術リード）","color":"#5c10be"},{"id":"u-taka","name":"高橋（PMO）","color":"#507500"},{"id":"u-tana","name":"田中（作成者）","color":"#aa00aa"}]</script>
 <script id="comment-store" type="application/json">[{"id":"txt-msjglplz","type":"text","text":"「保守的な前提」の中身が資料のどこにもありません。端末台数・保守費・障害件数の3つの前提値を欄外に示さないと、役員会でここから崩されます。","author":"佐藤（営業統括）","color":"#a90000","date":"2026-08-07T21:30:59.723Z","updatedAt":"2026-08-07T21:30:59.723Z","resolved":false,"quote":"回収計算は保守的な前提に立っており、上振れ余地がある","prefix":"  レジ待ち短縮による離脱防止・客単価向上は算入していない。","suffix":"。\n              \n            \n","label":"must"},{"id":"txt-msjglpqa","type":"text","text":"並行稼働1週間では差分検証2回が回りません。パイロットと同じ2週間に揃えるべきです。P.6の「週8店舗まで上げられる」とも整合しません。","author":"山本（技術リード）","color":"#5c10be","date":"2026-08-07T21:30:59.844Z","updatedAt":"2026-08-07T21:31:01.078Z","resolved":false,"quote":"週5店舗ペースで展開し、各店で1週間の並行稼働期間を設ける","prefix":" 4\n                  順次展開 70店舗","suffix":"\n                  14週\n       ","label":"must","replies":[{"id":"rep-msjglqlx","text":"承知しました。P.7を2週間に修正し、P.6の展開ペースの前提も合わせて直します。","author":"田中（作成者）","color":"#aa00aa","date":"2026-08-07T21:31:00.981Z"},{"id":"rep-msjglqom","text":"お願いします。ゲート通過基準の「4週連続」の起点も2週間側に合わせて確認してください。","author":"山本（技術リード）","color":"#5c10be","date":"2026-08-07T21:31:01.078Z"}]},{"id":"txt-msjglpt6","type":"text","text":"P.12では「1か月の遅延で27/Q2のバッファを失う」とあります。遅延の効き方の説明をどちらかに統一してください。","author":"高橋（PMO）","color":"#507500","date":"2026-08-07T21:30:59.947Z","updatedAt":"2026-08-07T21:30:59.947Z","resolved":false,"quote":"2026年9月中に契約を締結できること（遅れると全体が同月数ずれる）","prefix":"             \n                ","suffix":"\n                端末640台の調達リードタ","label":"must"},{"id":"txt-msjglpw3","type":"text","text":"オフライン時の取扱上限（金額・件数）がRFP要件に入っているか確認をお願いします。無制限だと監査側から不正リスクを指摘されます。","author":"山本（技術リード）","color":"#5c10be","date":"2026-08-07T21:31:00.053Z","updatedAt":"2026-08-07T21:31:00.053Z","resolved":false,"quote":"通信断時は端末単体で会計を継続し、復旧後に自動同期するオフライン動作を必須とする","prefix":"SLAとして契約に明記する\n                ","suffix":"\n                販売データは3年間オンライ","label":"want"},{"id":"txt-msjglpz3","type":"text","text":"先行枠案を出すなら、本体決裁が遅れた場合でも0.4億円が無駄にならない条件（端末の転用可否など）まで添えたいです。","author":"佐藤（営業統括）","color":"#a90000","date":"2026-08-07T21:31:00.162Z","updatedAt":"2026-08-07T21:31:00.162Z","resolved":false,"quote":"パイロット10店舗分（0.4億円）のみ先行枠で対応する案も可","prefix":"期投資3.4億円の予算計上2026年度下期補正予算への計上。","suffix":"\n                  経営会議2026/9/","label":"want"},{"id":"txt-msjglq27","type":"text","text":"P.2の実地観測（2026年5月・計1,240会計）と同じ調査でしょうか。出典表記を統一しましょう。","author":"高橋（PMO）","color":"#507500","date":"2026-08-07T21:31:00.273Z","updatedAt":"2026-08-07T21:31:01.178Z","resolved":true,"quote":"ピーク時のレジ待ちは平均4.2分","prefix":"3」は導入13年目で、保守契約が2027年3月末に満了する。","suffix":"、端末停止は年37件と増加傾向にある。\n          ","label":"nit","replies":[{"id":"rep-msjglqre","text":"同じ調査です。P.1にも出典（店舗調査・2026年5月）を追記しました。","author":"田中（作成者）","color":"#aa00aa","date":"2026-08-07T21:31:01.178Z"}],"resolvedAt":"2026-08-07T21:31:01.273Z","resolvedBy":"高橋（PMO）"},{"id":"txt-msjglq59","type":"text","text":"この言い回しは口頭説明向きです。資料上は「次期フェーズ（2027年度上期）で検討」に置き換えませんか。","author":"佐藤（営業統括）","color":"#a90000","date":"2026-08-07T21:31:00.384Z","updatedAt":"2026-08-07T21:31:00.384Z","resolved":false,"quote":"対象外3項目は「やらない」ではなく「今回はやらない」","prefix":"    \n          NOTE\n          ","suffix":"。次期フェーズの検討開始は2027年度上期を想定\n     ","label":"nit"},{"id":"txt-msjglq8d","type":"text","text":"P.8では情報システム部長は指揮系統に入らないとしています。ここの「情シス」が組織なのか個人なのか、判断者を1名に特定してください。","author":"高橋（PMO）","color":"#507500","date":"2026-08-07T21:31:00.497Z","updatedAt":"2026-08-07T21:31:00.497Z","resolved":false,"quote":"移行精度99.9％の可否判断は情シスに集約し、店舗ごとの個別判断を認めない","prefix":"           \n                  ","suffix":"\n                  ベンダーは実行（R）に","label":"want"},{"id":"pin-msjglqca","type":"pin","text":"ベンダー8名がどのチームに常駐するのか、この図では読めません。所属先まで示してください。","author":"山本（技術リード）","color":"#5c10be","date":"2026-08-07T21:31:00.949Z","updatedAt":"2026-08-07T21:31:00.949Z","resolved":false,"x":199,"y":6466,"xr":0.187736}]</script>
-<script id="comment-meta" type="application/json">{"schema":1,"docId":"doc-m16fvd1w","revId":"rev-a3qqjl7j","parentRevId":"rev-a0uhwl4w","gen":3,"lineage":[{"revId":"rev-3wn8jl7a","at":"2026-08-08T13:11:23.744Z","by":"","op":"inject"},{"revId":"rev-a0uhwl4w","at":"2026-08-09T01:13:15.891Z","by":"","op":"in-place"},{"revId":"rev-a3qqjl7j","at":"2026-08-09T03:17:53.919Z","by":"","op":"in-place"}],"title":"次世代POSシステム刷新プロジェクト「Project NOVA」提案資料"}</script>
+<script id="comment-meta" type="application/json">{"schema":1,"docId":"doc-m16fvd1w","revId":"rev-06zpbgr1","parentRevId":"rev-a3qqjl7j","gen":4,"lineage":[{"revId":"rev-3wn8jl7a","at":"2026-08-08T13:11:23.744Z","by":"","op":"inject"},{"revId":"rev-a0uhwl4w","at":"2026-08-09T01:13:15.891Z","by":"","op":"in-place"},{"revId":"rev-a3qqjl7j","at":"2026-08-09T03:17:53.919Z","by":"","op":"in-place"},{"revId":"rev-06zpbgr1","at":"2026-08-09T04:05:18.522Z","by":"","op":"in-place"}],"title":"次世代POSシステム刷新プロジェクト「Project NOVA」提案資料"}</script>
 
 <style id="cl-style">
 /* ===================================================================
@@ -2561,7 +2561,9 @@ html.cl-open #cl-sidebar{ display:flex; }
   background:var(--cl-white); color:var(--cl-text); cursor:pointer; }
 .cl-sort-btn:hover{ border-color:var(--cl-primary); }
 .cl-sort-combo.open .cl-sort-btn{ border-color:var(--cl-primary); box-shadow:0 0 0 2px var(--cl-key-200); }
-.cl-sort-pop{ position:absolute; top:calc(100% + 4px); right:0; min-width:132px; margin:0; padding:4px;
+/* ★ul で作っているので、下の「ホストCSSの無効化」（#cl-sidebar :is(…ul…)＝ID込みの詳細度）に
+   クラス1つのセレクタでは負ける。ID を足して自分のリセットに勝たせる（v2.15.2） */
+#cl-sidebar .cl-sort-pop{ position:absolute; top:calc(100% + 4px); right:0; min-width:132px; margin:0; padding:4px;
   list-style:none; background:var(--cl-white); border:1px solid var(--cl-gray-300); border-radius:8px;
   box-shadow:var(--cl-elev-4); z-index:20; overflow:hidden; }
 #cl-sort-list .cl-opt{ font-size:12.5px; padding:6px 8px; }
@@ -3459,7 +3461,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
 (function () {
   'use strict';
   if (window.__commentLayer) return;
-  var VERSION = '2.15.1';
+  var VERSION = '2.15.2';
 
   var comments = [], users = [], pinMode = false, draft = null, dirty = false, activeId = null, booted = false;
   // 版の系譜（comment-meta）。ファイル往復は本質的に分岐するので、分岐を防ぐのではなく
@@ -6301,7 +6303,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
   };
 })();
 </script>
-<!-- ===== COMMENT-LAYER v2.15.1 : END ===== -->
+<!-- ===== COMMENT-LAYER v2.15.2 : END ===== -->
 
 
 
