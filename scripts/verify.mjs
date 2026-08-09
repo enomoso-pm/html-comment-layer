@@ -802,50 +802,61 @@ try {
   ok('凍結後に追加した新規コメントは先頭に置かれる',
      r31b.新規は先頭 && r31b.件数が1増えた, JSON.stringify(r31b));
 
-  // 31d. 「優先度順」を選んだまま、いまの並びで凍結し直せる（v2.15.0）。
-  //      ネイティブ select は同じ値を選び直しても change が発火しない。mousedown で
-  //      selectedIndex を外して発火させる案を一度入れたが、ブラウザが表示を先頭の
-  //      選択肢（更新順）に倒してしまい「いま何が選ばれているか」を誤って示す事故に
-  //      なった（実利用で発見）。select 自体はいじらず、隣の
-  //      [data-cl="sort-refresh"] ボタンに操作を分離した
+  // 31d. 「優先度順」を選んだまま、同じ「優先度順」を選び直すと今の並びで凍結し直せる
+  //      （v2.15.0で判明）。ネイティブ select は同じ値を選び直しても change が発火
+  //      しない。mousedown で selectedIndex を外して発火させる案を一度入れたが、
+  //      ブラウザが表示を先頭の選択肢（更新順）に倒してしまい「いま何が選ばれて
+  //      いるか」を誤って示す事故になった（実利用で発見）。select をやめ、
+  //      #cl-user-btn/#cl-user-pop と同じ自前listboxパターンに作り直した。
+  //      chooseSortIndex() は「すでにこの値か」を見ずに毎回 applySortMode() を
+  //      呼ぶので、同じ選択肢の選び直しでも効く（#cl-user のchooseComboIndexと同じ設計）
   const r31d = JSON.parse(await b.evalJS(IDS + `
     __commentLayer.setSort('updated');
     __commentLayer.setSort('priority');
-    const ss = document.getElementById('cl-sort');
-    const 更新前の表示 = ss.value;
+    const nameEl = document.getElementById('cl-sort-name');
+    const 表示前 = nameEl.textContent;
     const target = ids().filter(id => !at(id).resolved).slice(-1)[0];
     const before = ids();
     for (let i = 0; i < 4 && at(target).label !== 'must'; i++) __commentLayer.cycleLabel(target);
     const afterLabelChange = ids();
-    document.querySelector('[data-cl="sort-refresh"]').click();
-    const afterRefresh = ids();
-    const 更新後の表示 = ss.value;
+    document.getElementById('cl-sort-btn').click();                        // 開く
+    document.querySelector('#cl-sort-list [data-i="1"]').click();          // 同じ「優先度順」を選び直す
+    const afterReselect = ids();
+    const 表示後 = nameEl.textContent;
+    document.getElementById('cl-sort-btn').click();                        // 開き直して選択状態を見る
+    const 優先度順だけ選択中 = document.querySelector('#cl-sort-list [data-i="1"]').getAttribute('aria-selected') === 'true'
+      && document.querySelector('#cl-sort-list [data-i="0"]').getAttribute('aria-selected') === 'false';
+    document.getElementById('cl-sort-btn').click();                        // 閉じる
     __commentLayer.setSort('updated');
     return JSON.stringify({
-      表示は最初から優先度順: 更新前の表示 === 'priority',
+      表示は最初から優先度順: 表示前 === '優先度順',
       ラベルはmustになった: at(target).label === 'must',
-      更新前は凍結のまま動かない: JSON.stringify(before) === JSON.stringify(afterLabelChange),
-      更新すると先頭へ動く: afterRefresh[0] === target,
-      更新前後で並びが変わった: JSON.stringify(afterLabelChange) !== JSON.stringify(afterRefresh),
-      表示は更新後も優先度順のまま: 更新後の表示 === 'priority'
+      選び直す前は凍結のまま動かない: JSON.stringify(before) === JSON.stringify(afterLabelChange),
+      選び直すと先頭へ動く: afterReselect[0] === target,
+      選び直す前後で並びが変わった: JSON.stringify(afterLabelChange) !== JSON.stringify(afterReselect),
+      表示は選び直した後も優先度順: 表示後 === '優先度順',
+      優先度順だけ選択中
     });
   `));
-  ok('優先度順のまま更新ボタンを押すと、選択表示を保ったままいまのラベルで並びが更新される',
-     r31d.表示は最初から優先度順 && r31d.ラベルはmustになった && r31d.更新前は凍結のまま動かない
-       && r31d.更新すると先頭へ動く && r31d.更新前後で並びが変わった && r31d.表示は更新後も優先度順のまま,
+  ok('優先度順のまま同じ「優先度順」を選び直すと、表示を保ったままいまのラベルで並びが更新される',
+     r31d.表示は最初から優先度順 && r31d.ラベルはmustになった && r31d.選び直す前は凍結のまま動かない
+       && r31d.選び直すと先頭へ動く && r31d.選び直す前後で並びが変わった && r31d.表示は選び直した後も優先度順
+       && r31d.優先度順だけ選択中,
      JSON.stringify(r31d));
 
-  // 31e. 更新順のときに押しても表示は崩れない（同じボタンが両方の並び順に効く）
+  // 31e. 更新順のときに同じ「更新順」を選び直しても表示は崩れず、エラーにもならない
+  //      （同じ仕組みが両方の並び順に対称に効く）
   const r31e = JSON.parse(await b.evalJS(`
     __commentLayer.setSort('updated');
-    const ss = document.getElementById('cl-sort');
-    document.querySelector('[data-cl="sort-refresh"]').click();
+    const nameEl = document.getElementById('cl-sort-name');
+    document.getElementById('cl-sort-btn').click();
+    document.querySelector('#cl-sort-list [data-i="0"]').click();   // 同じ「更新順」を選び直す
     return JSON.stringify({
-      表示は更新順のまま: ss.value === 'updated',
+      表示は更新順のまま: nameEl.textContent === '更新順',
       モードは更新順のまま: __commentLayer.sortMode === 'updated'
     });
   `));
-  ok('更新順のときに更新ボタンを押しても表示・モードは更新順のまま変わらない',
+  ok('更新順のときに同じ「更新順」を選び直しても表示・モードは更新順のまま変わらない',
      r31e.表示は更新順のまま && r31e.モードは更新順のまま, JSON.stringify(r31e));
 
   // 32. 指摘コピー：完了・ラベル・返信が明示され、書き出しJSONにも完了状態が残る
