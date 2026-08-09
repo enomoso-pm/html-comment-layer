@@ -1,5 +1,5 @@
 <!-- ===================================================================
-     COMMENT-LAYER v2.15.1 : START
+     COMMENT-LAYER v2.15.2 : START
      HTML資料にレビューコメント機能を後付けするドロップイン・ブロック。
      この START 〜 END までを丸ごと差し替えればバージョンアップできる。
      資料側に必要な条件：
@@ -273,7 +273,9 @@ html.cl-open #cl-sidebar{ display:flex; }
   background:var(--cl-white); color:var(--cl-text); cursor:pointer; }
 .cl-sort-btn:hover{ border-color:var(--cl-primary); }
 .cl-sort-combo.open .cl-sort-btn{ border-color:var(--cl-primary); box-shadow:0 0 0 2px var(--cl-key-200); }
-.cl-sort-pop{ position:absolute; top:calc(100% + 4px); right:0; min-width:132px; margin:0; padding:4px;
+/* ★ul で作っているので、下の「ホストCSSの無効化」（#cl-sidebar :is(…ul…)＝ID込みの詳細度）に
+   クラス1つのセレクタでは負ける。ID を足して自分のリセットに勝たせる（v2.15.2） */
+#cl-sidebar .cl-sort-pop{ position:absolute; top:calc(100% + 4px); right:0; min-width:132px; margin:0; padding:4px;
   list-style:none; background:var(--cl-white); border:1px solid var(--cl-gray-300); border-radius:8px;
   box-shadow:var(--cl-elev-4); z-index:20; overflow:hidden; }
 #cl-sort-list .cl-opt{ font-size:12.5px; padding:6px 8px; }
@@ -1171,7 +1173,7 @@ html.cl-guide-open #cl-guide{ display:flex; }
 (function () {
   'use strict';
   if (window.__commentLayer) return;
-  var VERSION = '2.15.1';
+  var VERSION = '2.15.2';
 
   var comments = [], users = [], pinMode = false, draft = null, dirty = false, activeId = null, booted = false;
   // 版の系譜（comment-meta）。ファイル往復は本質的に分岐するので、分岐を防ぐのではなく
@@ -4013,4 +4015,4 @@ html.cl-guide-open #cl-guide{ display:flex; }
   };
 })();
 </script>
-<!-- ===== COMMENT-LAYER v2.15.1 : END ===== -->
+<!-- ===== COMMENT-LAYER v2.15.2 : END ===== -->

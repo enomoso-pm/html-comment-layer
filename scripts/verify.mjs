@@ -859,6 +859,25 @@ try {
   ok('更新順のときに同じ「更新順」を選び直しても表示・モードは更新順のまま変わらない',
      r31e.表示は更新順のまま && r31e.モードは更新順のまま, JSON.stringify(r31e));
 
+  // 31f. 並び順のポップが透けない（v2.15.2）。ポップは ul なので、サイドバー内の
+  //      「ホストCSSの無効化」リセット（#cl-sidebar :is(…ul…)＝ID込みの詳細度）に
+  //      クラス1つの .cl-sort-pop が負け、背景・枠線・影が initial に潰されて
+  //      下のカードが透けて見えていた。div の .cl-combo-pop はリセットの対象外なので
+  //      無事で、ul で作った並び順ポップだけが踏んだ。セレクタ名ではなく
+  //      「実際に描かれた背景」を計算後スタイルで見る
+  const r31f = JSON.parse(await b.evalJS(`
+    document.getElementById('cl-sort-btn').click();                        // 開く
+    const pop = document.getElementById('cl-sort-list');
+    const cs = getComputedStyle(pop);
+    const 背景が不透明 = cs.backgroundColor !== 'rgba(0, 0, 0, 0)' && cs.backgroundColor !== 'transparent';
+    const 枠線がある = parseFloat(cs.borderTopWidth) > 0;
+    const 影がある = cs.boxShadow !== 'none';
+    document.getElementById('cl-sort-btn').click();                        // 閉じる
+    return JSON.stringify({ 背景が不透明, 枠線がある, 影がある, bg: cs.backgroundColor });
+  `));
+  ok('並び順のポップが透けない（サイドバー内のリセットに負けず背景・枠線・影が描かれる）',
+     r31f.背景が不透明 && r31f.枠線がある && r31f.影がある, JSON.stringify(r31f));
+
   // 32. 指摘コピー：完了・ラベル・返信が明示され、書き出しJSONにも完了状態が残る
   const r32 = JSON.parse(await b.evalJS(`
     const labOf = id => __commentLayer.comments.filter(x => x.id === id)[0].label || '';
